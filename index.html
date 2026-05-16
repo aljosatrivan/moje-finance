@@ -1,0 +1,600 @@
+<!DOCTYPE html>
+<html lang="sl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#0f172a">
+<title>Aljošov Dashboard</title>
+<style>
+  :root {
+    --bg: #0f172a;
+    --bg-2: #1e293b;
+    --bg-3: #334155;
+    --surface: #1e293b;
+    --surface-hi: #273449;
+    --border: #334155;
+    --text: #f1f5f9;
+    --text-dim: #94a3b8;
+    --text-soft: #cbd5e1;
+    --primary: #6366f1;
+    --primary-hi: #818cf8;
+    --primary-bg: rgba(99, 102, 241, 0.12);
+    --income: #22c55e;
+    --warning: #f59e0b;
+    --radius: 12px;
+    --radius-sm: 8px;
+    --sidebar-width: 280px;
+    --shadow: 0 4px 24px rgba(0,0,0,0.3);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    overflow: hidden;
+  }
+
+  /* Layout */
+  .app {
+    display: flex;
+    height: 100vh;
+    width: 100vw;
+  }
+
+  /* Sidebar */
+  aside.sidebar {
+    width: var(--sidebar-width);
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+    transition: transform 0.25s ease;
+    z-index: 50;
+  }
+  .sidebar-header {
+    padding: 18px 20px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .avatar {
+    width: 36px; height: 36px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--primary), #a855f7);
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 14px;
+    color: white;
+    flex-shrink: 0;
+  }
+  .who { display: flex; flex-direction: column; min-width: 0; }
+  .who .name { font-weight: 600; font-size: 14px; color: var(--text); }
+  .who .sub { font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.05em; }
+
+  .sidebar-nav {
+    flex: 1;
+    overflow-y: auto;
+    padding: 12px 12px 24px;
+  }
+
+  .nav-section {
+    margin-top: 4px;
+  }
+  .nav-section-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 10px 8px;
+    cursor: pointer;
+    user-select: none;
+    border-radius: var(--radius-sm);
+    transition: background 0.12s;
+  }
+  .nav-section-header:hover { background: var(--surface-hi); }
+  .nav-section-header .label {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .nav-section-header .label .icon { font-size: 14px; }
+  .nav-section-header .caret {
+    font-size: 12px;
+    color: var(--text-dim);
+    transition: transform 0.18s;
+  }
+  .nav-section.collapsed .caret { transform: rotate(-90deg); }
+  .nav-section.collapsed .nav-items { max-height: 0; }
+  .nav-items {
+    overflow: hidden;
+    max-height: 1000px;
+    transition: max-height 0.2s ease;
+  }
+  .nav-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 9px 12px;
+    margin: 2px 0;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    color: var(--text-soft);
+    font-size: 14px;
+    transition: background 0.12s, color 0.12s;
+    border: 1px solid transparent;
+  }
+  .nav-item:hover { background: var(--surface-hi); color: var(--text); }
+  .nav-item.active {
+    background: var(--primary-bg);
+    color: var(--primary-hi);
+    border-color: rgba(99, 102, 241, 0.3);
+  }
+  .nav-item .icon { font-size: 16px; flex-shrink: 0; }
+  .nav-empty {
+    padding: 8px 12px;
+    font-size: 12px;
+    color: var(--text-dim);
+    font-style: italic;
+  }
+
+  .sidebar-footer {
+    border-top: 1px solid var(--border);
+    padding: 14px 16px;
+    font-size: 11px;
+    color: var(--text-dim);
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .sidebar-footer .ver { font-weight: 600; }
+  .sidebar-footer .status { display: flex; align-items: center; gap: 6px; }
+  .status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--income); }
+
+  /* Main content */
+  main.content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    min-width: 0;
+  }
+
+  header.topbar {
+    height: 56px;
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center;
+    padding: 0 20px;
+    gap: 12px;
+    flex-shrink: 0;
+    background: var(--bg);
+  }
+  .hamburger {
+    background: none; border: none;
+    color: var(--text); font-size: 20px;
+    cursor: pointer;
+    display: none;
+    padding: 6px;
+    border-radius: var(--radius-sm);
+  }
+  .hamburger:hover { background: var(--surface); }
+  .breadcrumb {
+    font-size: 14px;
+    color: var(--text-dim);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 1;
+    min-width: 0;
+  }
+  .breadcrumb .current { color: var(--text); font-weight: 600; }
+  .breadcrumb .sep { color: var(--text-dim); }
+
+  .topbar-actions { display: flex; gap: 8px; align-items: center; }
+  .icon-btn {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 7px 10px;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    font-size: 13px;
+    display: flex; align-items: center; gap: 6px;
+    transition: background 0.12s;
+  }
+  .icon-btn:hover { background: var(--surface-hi); }
+
+  /* Content area */
+  .content-area {
+    flex: 1;
+    overflow: hidden;
+    position: relative;
+  }
+  .content-iframe {
+    width: 100%;
+    height: 100%;
+    border: none;
+    background: var(--bg);
+    display: block;
+  }
+
+  /* Welcome view */
+  .welcome {
+    height: 100%;
+    overflow-y: auto;
+    padding: 32px;
+  }
+  .welcome-hero {
+    background: linear-gradient(135deg, rgba(99,102,241,0.15) 0%, rgba(168,85,247,0.1) 100%);
+    border: 1px solid rgba(99,102,241,0.2);
+    border-radius: 16px;
+    padding: 28px 32px;
+    margin-bottom: 24px;
+  }
+  .welcome-hero h1 {
+    font-size: 28px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    margin-bottom: 6px;
+  }
+  .welcome-hero p {
+    color: var(--text-soft);
+    font-size: 15px;
+    line-height: 1.55;
+  }
+  .welcome-date {
+    color: var(--text-dim);
+    font-size: 13px;
+    margin-top: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .cards-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 16px;
+    margin-bottom: 24px;
+  }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 18px 20px;
+    transition: border-color 0.15s, transform 0.05s;
+    cursor: pointer;
+  }
+  .card:hover {
+    border-color: var(--primary);
+    transform: translateY(-1px);
+  }
+  .card.disabled {
+    cursor: default;
+    opacity: 0.55;
+  }
+  .card.disabled:hover {
+    border-color: var(--border);
+    transform: none;
+  }
+  .card-icon {
+    width: 40px; height: 40px;
+    border-radius: 10px;
+    background: var(--primary-bg);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 20px;
+    margin-bottom: 12px;
+  }
+  .card h3 { font-size: 16px; font-weight: 600; margin-bottom: 4px; }
+  .card p { font-size: 13px; color: var(--text-dim); line-height: 1.5; }
+  .card .pill {
+    display: inline-block;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 100px;
+    margin-top: 10px;
+    background: var(--bg-3);
+    color: var(--text-dim);
+  }
+  .card .pill.live { background: rgba(34, 197, 94, 0.15); color: var(--income); }
+
+  .section-title {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin: 8px 0 12px;
+  }
+
+  .info-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px 20px;
+    font-size: 13px;
+    color: var(--text-soft);
+    line-height: 1.6;
+  }
+  .info-card strong { color: var(--text); }
+
+  /* Mobile */
+  @media (max-width: 768px) {
+    .hamburger { display: flex; }
+    aside.sidebar {
+      position: fixed;
+      top: 0; left: 0; bottom: 0;
+      transform: translateX(-100%);
+      box-shadow: var(--shadow);
+    }
+    aside.sidebar.open {
+      transform: translateX(0);
+    }
+    .sidebar-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.5);
+      z-index: 40;
+      display: none;
+    }
+    .sidebar-backdrop.show { display: block; }
+    .welcome { padding: 20px; }
+    .welcome-hero { padding: 20px; }
+    .welcome-hero h1 { font-size: 22px; }
+  }
+
+  /* Scrollbar styling */
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--bg-3); border-radius: 4px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--text-dim); }
+</style>
+</head>
+<body>
+
+<div class="app">
+
+  <!-- Sidebar -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+      <div class="avatar">A</div>
+      <div class="who">
+        <div class="name">Aljoša</div>
+        <div class="sub">Dashboard</div>
+      </div>
+    </div>
+
+    <nav class="sidebar-nav">
+      <div class="nav-section" data-section="personal">
+        <div class="nav-section-header" onclick="toggleSection('personal')">
+          <div class="label"><span class="icon">📌</span><span>Osebno</span></div>
+          <span class="caret">▾</span>
+        </div>
+        <div class="nav-items">
+          <div class="nav-item" data-module="finance" onclick="loadModule('finance')">
+            <span class="icon">💰</span><span>Finance</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="nav-section" data-section="work">
+        <div class="nav-section-header" onclick="toggleSection('work')">
+          <div class="label"><span class="icon">💼</span><span>Službeno</span></div>
+          <span class="caret">▾</span>
+        </div>
+        <div class="nav-items">
+          <div class="nav-empty">Še ni vsebine</div>
+        </div>
+      </div>
+    </nav>
+
+    <div class="sidebar-footer">
+      <span class="ver">v0.1</span>
+      <span class="status"><span class="status-dot"></span> Online</span>
+    </div>
+  </aside>
+
+  <div class="sidebar-backdrop" id="sidebarBackdrop" onclick="closeSidebar()"></div>
+
+  <!-- Main content -->
+  <main class="content">
+    <header class="topbar">
+      <button class="hamburger" onclick="openSidebar()" title="Meni">☰</button>
+      <div class="breadcrumb" id="breadcrumb">
+        <span class="current">Domov</span>
+      </div>
+      <div class="topbar-actions" id="topbarActions"></div>
+    </header>
+
+    <div class="content-area" id="contentArea">
+      <!-- Welcome view (default) -->
+      <div class="welcome" id="welcomeView">
+        <div class="welcome-hero">
+          <h1 id="greeting">Pozdravljen, Aljoša 👋</h1>
+          <p>To je tvoj osebni dashboard. Z leve strani izberi modul, ali klikni kartico spodaj.</p>
+          <div class="welcome-date" id="dateDisplay"></div>
+        </div>
+
+        <div class="section-title">Osebno</div>
+        <div class="cards-grid">
+          <div class="card" onclick="loadModule('finance')">
+            <div class="card-icon">💰</div>
+            <h3>Finance</h3>
+            <p>Beleženje prihodkov in odhodkov, grafi, statistika. Podatki v tvojem Google Drive-u.</p>
+            <span class="pill live">Aktivno</span>
+          </div>
+        </div>
+
+        <div class="section-title">Službeno (Bilumina)</div>
+        <div class="cards-grid">
+          <div class="card disabled">
+            <div class="card-icon" style="background: var(--bg-3);">⏳</div>
+            <h3>Še ni vsebine</h3>
+            <p>Gregor bo postavil bazo in skupni projekt. Sem bova dodala module, ko bo pripravljeno.</p>
+            <span class="pill">Pričakovano</span>
+          </div>
+        </div>
+
+        <div class="section-title">O dashboardu</div>
+        <div class="info-card">
+          To je <strong>v0.1</strong> tvojega dashboarda. Trenutno ima eno aktivno funkcijo (Finance).
+          V prihodnje sem bova dodala module, ki bodo polnili podatke iz različnih kanalov —
+          baza, ki jo bo postavil Gregor, Slack/Teams obvestila, koledarski dogodki, kakor bova odločila.
+          <br><br>
+          Levi meni je <strong>hirarhičen</strong>: lahko ga razširiš ali zožiš s klikom na naslov razdelka.
+          Tukajšnja razdelitev (Osebno / Službeno) bo služila kot temelj za vse, kar prideva nadgradila.
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script>
+const MODULES = {
+  finance: {
+    title: 'Finance',
+    icon: '💰',
+    url: 'finance.html',
+    description: 'Osebne finance'
+  }
+};
+
+let currentModule = null;
+
+function loadModule(name) {
+  const mod = MODULES[name];
+  if (!mod) return;
+  currentModule = name;
+  // Update breadcrumb
+  document.getElementById('breadcrumb').innerHTML = `
+    <span>Osebno</span>
+    <span class="sep">›</span>
+    <span class="current">${mod.icon} ${mod.title}</span>
+  `;
+  // Update topbar actions
+  document.getElementById('topbarActions').innerHTML = `
+    <button class="icon-btn" onclick="window.open('${mod.url}', '_blank')" title="Odpri v novem zavihku">↗ Ločeno</button>
+    <button class="icon-btn" onclick="goHome()" title="Domov">⌂</button>
+  `;
+  // Update nav active state
+  document.querySelectorAll('.nav-item').forEach(el => {
+    el.classList.toggle('active', el.dataset.module === name);
+  });
+  // Render iframe
+  document.getElementById('contentArea').innerHTML = `
+    <iframe class="content-iframe" src="${mod.url}" title="${mod.title}"></iframe>
+  `;
+  // Persist
+  try { localStorage.setItem('dashboard-last-module', name); } catch (e) {}
+  // Close mobile sidebar
+  closeSidebar();
+}
+
+function goHome() {
+  currentModule = null;
+  document.getElementById('breadcrumb').innerHTML = `<span class="current">Domov</span>`;
+  document.getElementById('topbarActions').innerHTML = '';
+  document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+  try { localStorage.removeItem('dashboard-last-module'); } catch (e) {}
+  renderWelcome();
+}
+
+function renderWelcome() {
+  document.getElementById('contentArea').innerHTML = `
+    <div class="welcome">
+      <div class="welcome-hero">
+        <h1>Pozdravljen, Aljoša 👋</h1>
+        <p>To je tvoj osebni dashboard. Z leve strani izberi modul, ali klikni kartico spodaj.</p>
+        <div class="welcome-date" id="dateDisplay"></div>
+      </div>
+
+      <div class="section-title">Osebno</div>
+      <div class="cards-grid">
+        <div class="card" onclick="loadModule('finance')">
+          <div class="card-icon">💰</div>
+          <h3>Finance</h3>
+          <p>Beleženje prihodkov in odhodkov, grafi, statistika. Podatki v tvojem Google Drive-u.</p>
+          <span class="pill live">Aktivno</span>
+        </div>
+      </div>
+
+      <div class="section-title">Službeno (Bilumina)</div>
+      <div class="cards-grid">
+        <div class="card disabled">
+          <div class="card-icon" style="background: var(--bg-3);">⏳</div>
+          <h3>Še ni vsebine</h3>
+          <p>Gregor bo postavil bazo in skupni projekt. Sem bova dodala module, ko bo pripravljeno.</p>
+          <span class="pill">Pričakovano</span>
+        </div>
+      </div>
+
+      <div class="section-title">O dashboardu</div>
+      <div class="info-card">
+        To je <strong>v0.1</strong> tvojega dashboarda. Trenutno ima eno aktivno funkcijo (Finance).
+        V prihodnje sem bova dodala module, ki bodo polnili podatke iz različnih kanalov.
+      </div>
+    </div>
+  `;
+  setDate();
+}
+
+function toggleSection(name) {
+  const sec = document.querySelector(`.nav-section[data-section="${name}"]`);
+  sec.classList.toggle('collapsed');
+  // Persist
+  try {
+    const collapsed = sec.classList.contains('collapsed');
+    const state = JSON.parse(localStorage.getItem('dashboard-sections') || '{}');
+    state[name] = collapsed;
+    localStorage.setItem('dashboard-sections', JSON.stringify(state));
+  } catch (e) {}
+}
+
+function openSidebar() {
+  document.getElementById('sidebar').classList.add('open');
+  document.getElementById('sidebarBackdrop').classList.add('show');
+}
+function closeSidebar() {
+  document.getElementById('sidebar').classList.remove('open');
+  document.getElementById('sidebarBackdrop').classList.remove('show');
+}
+
+function setDate() {
+  const el = document.getElementById('dateDisplay');
+  if (!el) return;
+  const days = ['nedelja','ponedeljek','torek','sreda','četrtek','petek','sobota'];
+  const months = ['januar','februar','marec','april','maj','junij','julij','avgust','september','oktober','november','december'];
+  const d = new Date();
+  el.textContent = days[d.getDay()] + ', ' + d.getDate() + '. ' + months[d.getMonth()] + ' ' + d.getFullYear();
+}
+
+function init() {
+  // Restore section collapse state
+  try {
+    const state = JSON.parse(localStorage.getItem('dashboard-sections') || '{}');
+    Object.entries(state).forEach(([name, collapsed]) => {
+      if (collapsed) {
+        document.querySelector(`.nav-section[data-section="${name}"]`)?.classList.add('collapsed');
+      }
+    });
+  } catch (e) {}
+
+  // Restore last module
+  try {
+    const last = localStorage.getItem('dashboard-last-module');
+    if (last && MODULES[last]) {
+      loadModule(last);
+      return;
+    }
+  } catch (e) {}
+
+  // Default: welcome view
+  setDate();
+}
+
+document.addEventListener('DOMContentLoaded', init);
+</script>
+</body>
+</html>
