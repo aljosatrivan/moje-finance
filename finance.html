@@ -483,6 +483,18 @@ const SCOPES = 'https://www.googleapis.com/auth/drive.file https://www.googleapi
 // Varnost zagotavlja seznam Authorized JavaScript origins v Google Cloud Console.
 const EMBEDDED_CLIENT_ID = '540110413847-lauuop1iefm54rljscsqaqc39f1vh1ti.apps.googleusercontent.com';
 
+// Parent dashboard token (če je app naložena v iframu znotraj dashboarda).
+// Dashboard pošlje { type: 'dashboard-auth', accessToken, expiresAt, email } prek postMessage.
+const PARENT = { accessToken: null, expiresAt: 0, email: null, inIframe: window.parent !== window };
+window.addEventListener('message', (e) => {
+  if (e.origin !== location.origin) return;
+  if (e.data && e.data.type === 'dashboard-auth') {
+    PARENT.accessToken = e.data.accessToken;
+    PARENT.expiresAt = e.data.expiresAt;
+    PARENT.email = e.data.email;
+  }
+});
+
 const SHEET_NAMES = { tx: 'transactions', cats: 'categories', meta: 'meta' };
 const TX_HEADERS = ['id', 'date', 'type', 'category_id', 'amount', 'description', 'created_at'];
 const CAT_HEADERS = ['id', 'name', 'type', 'color', 'icon'];
@@ -580,6 +592,8 @@ const Auth = {
     });
   },
   async getToken() {
+    // Najprej preveri parent dashboard token (če smo v iframu znotraj dashboarda)
+    if (PARENT.accessToken && Date.now() < PARENT.expiresAt) return PARENT.accessToken;
     if (this.accessToken && Date.now() < this.tokenExpiresAt) return this.accessToken;
     const r = await this.requestToken(false);
     if (r.error) throw new Error(r.error);
@@ -1232,6 +1246,31 @@ async function boot() {
     alert('Napaka pri nalaganju Google prijave: ' + e.message);
     showScreen('setup-screen');
     return;
+  }
+
+  // Če smo v iframu znotraj dashboarda, počakaj na parent token in skoči direktno v app
+  if (PARENT.inIframe) {
+    showScreen('loading-screen');
+    document.getElementById('loadingTitle').textContent = 'Pripravljam...';
+    document.getElementById('loadingMsg').textContent = 'Sprejemam prijavo od dashboarda';
+    if (!PARENT.accessToken) {
+      try { window.parent.postMessage({ type: 'dashboard-request-token' }, location.origin); } catch (e) {}
+      const deadline = Date.now() + 3000;
+      while (!PARENT.accessToken && Date.now() < deadline) {
+        await new Promise(r => setTimeout(r, 50));
+      }
+    }
+    if (PARENT.accessToken) {
+      Auth.email = PARENT.email;
+      try {
+        await DataStore.initialLoad();
+        showScreen('app-screen');
+        renderAll();
+        return;
+      } catch (e) {
+        console.error('Iframe initial load failed', e);
+      }
+    }
   }
 
   // Always show login first — user clicks to consent
