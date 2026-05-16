@@ -355,7 +355,7 @@
       <div id="syncInfo" style="font-size:14px; color:var(--text-soft); margin-bottom:12px;"></div>
       <div class="btn-row">
         <button class="btn btn-secondary" id="btnSyncNow">🔄 Sinhroniziraj zdaj</button>
-        <button class="btn btn-secondary" id="btnOpenSheet">📊 Odpri Sheets v brskalniku</button>
+        <button class="btn btn-secondary" id="btnOpenSheet">📊 Odpri Sheets v brskalniku"></button>
       </div>
     </div>
 
@@ -456,7 +456,7 @@
         <button type="submit" class="btn" style="flex:1">Shrani</button>
         <button type="button" class="btn btn-secondary" id="btnCancelCat">Prekliči</button>
       </div>
-      <button type="button" class="btn btn-danger btn-full" id="btnDeleteCat" style="display:none; margin-top:8px;">Izbriši</button>
+      <button type="button" class="btn btn-danger btn-full" id="btnDeleteCat">Izbriši</button>
     </form>
   </div>
 </div>
@@ -477,6 +477,11 @@ const SPREADSHEET_NAME = 'Moje finance — podatki';
 const CACHE_KEY = 'moje-finance-cloud-cache';
 const CONFIG_KEY = 'moje-finance-cloud-config';
 const SCOPES = 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/spreadsheets';
+
+// Vgrajen Client ID — uporabnik ne rabi nastavljati ničesar na novi napravi.
+// Client ID NI skrivnost (deluje kot javno uporabniško ime aplikacije).
+// Varnost zagotavlja seznam Authorized JavaScript origins v Google Cloud Console.
+const EMBEDDED_CLIENT_ID = '540110413847-lauuop1iefm54rljscsqaqc39f1vh1ti.apps.googleusercontent.com';
 
 const SHEET_NAMES = { tx: 'transactions', cats: 'categories', meta: 'meta' };
 const TX_HEADERS = ['id', 'date', 'type', 'category_id', 'amount', 'description', 'created_at'];
@@ -1209,7 +1214,9 @@ function showScreen(name) {
 /* ---------------- BOOT ---------------- */
 async function boot() {
   const cfg = Config.get();
-  if (!cfg.clientId) {
+  // Najprej preveri lokalno shranjen override, potem vgrajeni Client ID
+  const clientId = cfg.clientId || EMBEDDED_CLIENT_ID;
+  if (!clientId) {
     showScreen('setup-screen');
     return;
   }
@@ -1220,7 +1227,7 @@ async function boot() {
   document.getElementById('periodPicker').value = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0');
 
   try {
-    await Auth.init(cfg.clientId);
+    await Auth.init(clientId);
   } catch (e) {
     alert('Napaka pri nalaganju Google prijave: ' + e.message);
     showScreen('setup-screen');
@@ -1356,7 +1363,7 @@ function wireEvents() {
     showScreen('login-screen');
   });
   document.getElementById('btnResetConfig').addEventListener('click', () => {
-    if (!confirm('Ponastavi Client ID? Boš moral nastaviti znova.')) return;
+    if (!confirm('Ponastavi lokalne nastavitve in cache? Vgrajen Client ID ostane aktiven.')) return;
     Config.clear();
     Cache.clear();
     Auth.signOut();
@@ -1412,22 +1419,5 @@ function wireEvents() {
     DataStore.getTransactions().sort((a,b) => a.date.localeCompare(b.date)).forEach(t => {
       const c = DataStore.getCategory(t.category_id);
       rows.push([t.date, t.type === 'income' ? 'prihodek' : 'odhodek', c ? c.name : '', String(t.amount).replace('.', ','), t.description || '']);
-    });
-    const csv = rows.map(r => r.map(v => '"' + String(v).replace(/"/g, '""') + '"').join(';')).join('\n');
-    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = 'moje-finance-' + today() + '.csv';
-    a.click();
-    toast('CSV izvožen');
-  });
-}
-
-document.addEventListener('DOMContentLoaded', () => {
-  wireEvents();
-  boot();
-});
-</script>
-</body>
-</html>
- 
+    }, ','), t.description || '']);
+    }
