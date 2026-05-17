@@ -436,6 +436,9 @@
     #widgetNewsList li:hover { background: rgba(99, 102, 241, 0.08); }
     #widgetNewsList li:hover .item-main::after { opacity: 1; transform: translateX(2px); }
     #widgetNewsList li .item-main::after { content: ' ↗'; opacity: 0.4; transition: opacity 0.15s, transform 0.15s; }
+    .news-source { display: inline-block; font-size: 9px; font-weight: 700; letter-spacing: 0.5px; padding: 1px 5px; border-radius: 4px; margin-right: 6px; vertical-align: middle; }
+    .news-source.rtvslo { background: #1d4ed8; color: #fff; }
+    .news-source.ur24 { background: #dc2626; color: #fff; }
     @media (max-width: 720px) { .widgets-grid-cal { grid-template-columns: 1fr; } }
   
     .icon-btn { background: transparent; border: 1px solid var(--border, #334155); color: var(--text); padding: 6px 10px; border-radius: 6px; cursor: pointer; font-size: 14px; margin-left: 6px; transition: background 0.15s; }
@@ -1833,6 +1836,7 @@ document.addEventListener('DOMContentLoaded', boot);
         'https://www.rtvslo.si/feeds/03.xml',
         'https://www.rtvslo.si/feeds/04.xml',
         'https://www.rtvslo.si/feeds/08.xml',
+        'https://www.24ur.com/rss',
       ];
       const feedResults = await Promise.all(FEEDS.map(async function(feed){
         try {
@@ -1893,24 +1897,24 @@ document.addEventListener('DOMContentLoaded', boot);
         const matchedAll = _match(allItems);
         const seenKeys = new Set(matched.map(_dedupeKey));
         for (const n of matchedAll) {
-          if (matched.length >= 5) break;
+          if (matched.length >= __numNews) break;
           const k = _dedupeKey(n);
           if (!seenKeys.has(k)) { matched.push(n); seenKeys.add(k); }
         }
       }
-      // If still < 5, do deep body matching on top unmatched items (max 20 parallel fetches)
-      if (matched.length < 5) {
+      // If still < N, do deep body matching on top unmatched items (max 25 parallel fetches)
+      if (matched.length < __numNews) {
         const seenKeys = new Set(matched.map(_dedupeKey));
         const candidates = itemsForFilter
           .filter(function(n){ return !seenKeys.has(_dedupeKey(n)); })
           .sort(function(a,b){ return (b.pubDate ? b.pubDate.getTime() : 0) - (a.pubDate ? a.pubDate.getTime() : 0); })
-          .slice(0, 20);
+          .slice(0, 25);
         const bodyResults = await Promise.all(candidates.map(async function(c){
           const ok = await _bodyMatchesTopic(c);
           return ok ? c : null;
         }));
         for (const m of bodyResults) {
-          if (matched.length >= 5) break;
+          if (matched.length >= __numNews) break;
           if (m && !seenKeys.has(_dedupeKey(m))) { matched.push(m); seenKeys.add(_dedupeKey(m)); }
         }
       }
@@ -1923,7 +1927,7 @@ document.addEventListener('DOMContentLoaded', boot);
       }
       // Sort by date desc
       unique.sort(function(a,b){ return (b.pubDate ? b.pubDate.getTime() : 0) - (a.pubDate ? a.pubDate.getTime() : 0); });
-      return { items: unique.slice(0, 5), totalMatched: unique.length, topics, pool: allItems.length };
+      return { items: unique.slice(0, __numNews), totalMatched: unique.length, topics, pool: allItems.length };
     } catch(e) { return { error: e.message }; }
   }
   function fmtNewsDate(d) {
@@ -1959,7 +1963,10 @@ document.addEventListener('DOMContentLoaded', boot);
       else {
         const newHtml = useRes.items.map(function(n){
           const link = (n.link || '').replace(/"/g, '');
-          return '<li data-link="' + link + '"><div class="item-main">' + esc(n.title) + (n.desc ? '<div class="item-snippet">' + esc(n.desc.substring(0, 200)) + '</div>' : '') + '</div><span class="item-date">' + esc(fmtNewsDate(n.pubDate)) + '</span></li>';
+          let source = '';
+          if (link.indexOf('rtvslo.si') >= 0) source = '<span class="news-source rtvslo">RTV</span>';
+          else if (link.indexOf('24ur.com') >= 0) source = '<span class="news-source ur24">24ur</span>';
+          return '<li data-link="' + link + '"><div class="item-main">' + source + esc(n.title) + (n.desc ? '<div class="item-snippet">' + esc(n.desc.substring(0, 200)) + '</div>' : '') + '</div><span class="item-date">' + esc(fmtNewsDate(n.pubDate)) + '</span></li>';
         }).join('');
         if (ul.innerHTML !== newHtml) ul.innerHTML = newHtml;
         if (!ul._delegated) {
@@ -2037,6 +2044,7 @@ document.addEventListener('DOMContentLoaded', boot);
     visAccounts: true, visNews: true,
     newsTopics: 'Palestina, Iran, Pogačar, Roglič, Dončić',
     refMail: 30, refForMe: 300, refTx: 30, refCal: 120, refAcc: 30, refNews: 60,
+    newsCount: 5,
   };
   function getSettings() {
     try { return Object.assign({}, DEFAULT_SETTINGS, JSON.parse(localStorage.getItem('dashboard_settings') || '{}')); }
@@ -2058,6 +2066,8 @@ document.addEventListener('DOMContentLoaded', boot);
       const el = document.getElementById(id);
       if (el) el.value = (s[refMap[id]] !== undefined) ? s[refMap[id]] : DEFAULT_SETTINGS[refMap[id]];
     }
+    const ncEl = document.getElementById('setNewsCount');
+    if (ncEl) ncEl.value = (s.newsCount !== undefined) ? s.newsCount : DEFAULT_SETTINGS.newsCount;
     // Biometric (async availability check)
     const biomChk = document.getElementById('setBiometric');
     const biomStatus = document.getElementById('biometricStatus');
@@ -2097,6 +2107,7 @@ document.addEventListener('DOMContentLoaded', boot);
       refCal: Math.max(30, Number(document.getElementById('setRefCal').value) || DEFAULT_SETTINGS.refCal),
       refAcc: Math.max(5, Number(document.getElementById('setRefAcc').value) || DEFAULT_SETTINGS.refAcc),
       refNews: Math.max(15, Number(document.getElementById('setRefNews').value) || DEFAULT_SETTINGS.refNews),
+      newsCount: Math.max(1, Math.min(20, Number(document.getElementById('setNewsCount').value) || DEFAULT_SETTINGS.newsCount)),
     };
     saveSettingsObj(s);
     // Biometric: register on first enable, clear on disable
@@ -2246,6 +2257,7 @@ document.addEventListener('DOMContentLoaded', boot);
           <h3>Novice — topiki</h3>
           <p class="settings-hint">Po vejicah ločen seznam ključnih besed. Velike/male črke in šumniki niso pomembni.</p>
           <textarea id="setNewsTopics" rows="3" placeholder="Palestina, Iran, Pogačar, Roglič, Dončić"></textarea>
+          <div class="refresh-row" style="margin-top:10px"><span>📰 Število novic za prikaz</span><input type="number" min="1" max="20" id="setNewsCount"> </div>
         </div>
       </div>
       <div class="settings-footer">
