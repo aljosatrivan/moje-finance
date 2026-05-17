@@ -244,7 +244,13 @@
     nav.tabs button { padding: 8px 4px 10px; font-size: 10px; }
     nav.tabs button .icon { font-size: 17px; }
   }
-</style>
+
+    .view-toolbar { padding: 8px 16px 4px; }
+    .view-toolbar select { padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--card, var(--bg)); color: var(--text); font: inherit; width: 100%; max-width: 320px; }
+    .cat-bar-item { cursor: pointer; user-select: none; transition: opacity 0.15s; }
+    .cat-bar-item.cat-disabled { opacity: 0.35; }
+    .cat-bar-item.cat-disabled .cat-bar-fill { background: var(--border, #555) !important; }
+  </style>
 </head>
 <body>
 
@@ -312,6 +318,11 @@
   </nav>
 
   <section id="view-overview" class="view active">
+    <div class="view-toolbar">
+      <select id="filterAccountOverview">
+        <option value="all">Vsi računi</option>
+      </select>
+    </div>
     <div class="summary-grid">
       <div class="summary income">
         <div class="label">Prihodki</div>
@@ -355,6 +366,11 @@
   </section>
 
   <section id="view-statistics" class="view">
+    <div class="view-toolbar">
+      <select id="filterAccountStats">
+        <option value="all">Vsi računi</option>
+      </select>
+    </div>
     <div class="stats-period" id="statsPeriod">
       <button data-range="month" class="active">Ta mesec</button>
       <button data-range="3months">Zadnji 3 meseci</button>
@@ -1198,7 +1214,7 @@ function rangeFilter(txs) {
 }
 
 function renderStatistics() {
-  const txs = rangeFilter(DataStore.getTransactions());
+  const _accSelSt = document.getElementById('filterAccountStats') || document.getElementById('filterAccount'); const _accValSt = _accSelSt ? _accSelSt.value : 'all'; const txs = rangeFilter(DataStore.getTransactions()).filter(t => _accValSt === 'all' || t.account_id === _accValSt);
   const byMonth = {};
   txs.forEach(t => {
     const m = t.date.slice(0, 7);
@@ -1238,7 +1254,7 @@ function renderStatistics() {
       const c = DataStore.getCategory(cid);
       const pct = total > 0 ? (sum / total * 100) : 0;
       const li = document.createElement('li');
-      li.className = 'cat-bar-item';
+      li.dataset.catId = cid; li.className = 'cat-bar-item' + ((window._statsDisabledCats && window._statsDisabledCats.has(cid)) ? ' cat-disabled' : '');
       li.innerHTML = `
         <div class="cat-bar-row">
           <span class="name">${c ? c.icon + ' ' + escapeHtml(c.name) : 'Neznano'}</span>
@@ -1786,7 +1802,87 @@ document.addEventListener('DOMContentLoaded', () => {
   wireEvents();
   boot();
 });
-</script>
+
+  // ===== Account filter mirrors + catBars toggle (v0.5) =====
+  (function(){
+    window._statsDisabledCats = window._statsDisabledCats || new Set();
+    function _populateMirrors() {
+      const accts = (typeof state !== 'undefined' && state.accounts) || [];
+      ['filterAccountOverview', 'filterAccountStats'].forEach(function(id){
+        const sel = document.getElementById(id);
+        if (!sel) return;
+        const prev = sel.value || 'all';
+        sel.innerHTML = '<option value="all">Vsi računi</option>';
+        for (const a of accts) {
+          const o = document.createElement('option');
+          o.value = a.id;
+          o.textContent = (a.icon ? a.icon + ' ' : '') + a.name;
+          sel.appendChild(o);
+        }
+        sel.value = prev;
+      });
+    }
+    // Wrap refreshFilterAccounts to also populate mirrors
+    if (typeof window.refreshFilterAccounts === 'function') {
+      const _orig = window.refreshFilterAccounts;
+      window.refreshFilterAccounts = function(){ _orig.apply(this, arguments); _populateMirrors(); };
+    }
+    function _syncFromTo(srcId) {
+      const src = document.getElementById(srcId);
+      if (!src) return;
+      const v = src.value;
+      ['filterAccount', 'filterAccountOverview', 'filterAccountStats'].forEach(function(id){
+        if (id === srcId) return;
+        const el = document.getElementById(id);
+        if (el && el.value !== v) el.value = v;
+      });
+      if (typeof renderAll === 'function') renderAll();
+    }
+    function _wire() {
+      _populateMirrors();
+      ['filterAccountOverview', 'filterAccountStats'].forEach(function(id){
+        const el = document.getElementById(id);
+        if (el && !el._mirroredBound) {
+          el._mirroredBound = true;
+          el.addEventListener('change', function(){ _syncFromTo(id); });
+        }
+      });
+      // Also re-render Pregled/Statistika when filterAccount changes (already wired to renderTransactions, but we need full renderAll)
+      const fa = document.getElementById('filterAccount');
+      if (fa && !fa._mirroredBound) {
+        fa._mirroredBound = true;
+        fa.addEventListener('change', function(){
+          ['filterAccountOverview', 'filterAccountStats'].forEach(function(id){
+            const el = document.getElementById(id);
+            if (el && el.value !== fa.value) el.value = fa.value;
+          });
+          if (typeof renderAll === 'function') renderAll();
+        });
+      }
+      // catBars click delegation
+      const cb = document.getElementById('catBars');
+      if (cb && !cb._toggleBound) {
+        cb._toggleBound = true;
+        cb.addEventListener('click', function(e){
+          const li = e.target.closest('.cat-bar-item');
+          if (!li) return;
+          const cid = li.dataset.catId;
+          if (!cid) return;
+          if (window._statsDisabledCats.has(cid)) window._statsDisabledCats.delete(cid);
+          else window._statsDisabledCats.add(cid);
+          li.classList.toggle('cat-disabled');
+        });
+      }
+    }
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', _wire);
+    else _wire();
+    // Re-wire after each renderAll (in case DOM is rebuilt)
+    if (typeof window.renderAll === 'function') {
+      const _origRA = window.renderAll;
+      window.renderAll = function(){ _origRA.apply(this, arguments); _wire(); };
+    }
+  })();
+  </script>
 </body>
 </html>
  
