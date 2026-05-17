@@ -293,6 +293,17 @@
     .sub-list .sub-pct { opacity: 0.6; font-variant-numeric: tabular-nums; min-width: 36px; text-align: right; font-size: 12px; }
     .sub-list .sub-sum { font-variant-numeric: tabular-nums; font-weight: 600; min-width: 80px; text-align: right; }
     .sub-list .sub-empty { padding: 6px 10px; opacity: 0.6; font-size: 13px; }
+  
+    .pie-sublist { list-style: none; margin: 8px 0 0 0; padding: 0; border-top: 1px solid var(--border); }
+    .pie-sublist:empty { display: none; }
+    .pie-sublist .pie-sub-header { padding: 10px 12px 6px; font-weight: 600; font-size: 13px; opacity: 0.8; text-transform: uppercase; letter-spacing: 0.4px; }
+    .pie-sublist .sub-item { position: relative; display: grid; grid-template-columns: 1fr auto auto; gap: 10px; align-items: center; padding: 6px 12px; font-size: 13px; }
+    .pie-sublist .sub-bar-bg { position: absolute; left: 0; top: 0; bottom: 0; background: rgba(99,102,241,0.07); border-radius: 4px; z-index: 0; pointer-events: none; }
+    .pie-sublist .sub-name, .pie-sublist .sub-pct, .pie-sublist .sub-sum { position: relative; z-index: 1; }
+    .pie-sublist .sub-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .pie-sublist .sub-pct { opacity: 0.6; font-variant-numeric: tabular-nums; min-width: 36px; text-align: right; font-size: 12px; }
+    .pie-sublist .sub-sum { font-variant-numeric: tabular-nums; font-weight: 600; min-width: 80px; text-align: right; }
+    .pie-sublist .sub-empty { padding: 6px 12px; opacity: 0.6; font-size: 13px; }
   </style>
 </head>
 <body>
@@ -383,6 +394,7 @@
     <div class="card">
       <h2>Razdelitev odhodkov</h2>
       <div class="chart-wrap"><canvas id="overviewPie"></canvas></div>
+      <ul id="overviewSubList" class="pie-sublist"></ul>
     </div>
     <div class="card">
       <h2>Zadnje transakcije</h2>
@@ -1111,10 +1123,10 @@ function renderOverview() {
 
   const byCat = {};
   txs.filter(t => t.type === 'expense').forEach(t => { byCat[t.category_id] = (byCat[t.category_id] || 0) + Number(t.amount); });
-  const labels = [], data = [], colors = [];
+  const labels = [], data = [], colors = [], cids = [];
   Object.entries(byCat).sort((a,b) => b[1]-a[1]).forEach(([cid, sum]) => {
     const c = DataStore.getCategory(cid);
-    labels.push(c ? c.name : 'Neznano');
+    labels.push(c ? c.name : 'Neznano'); cids.push(cid);
     data.push(sum);
     colors.push(c ? c.color : '#888');
   });
@@ -1136,6 +1148,53 @@ function renderOverview() {
         }
       }
     });
+  // Pie click drill-down: build sub-cat map + attach click handler
+  const _pieSubMap = {};
+  filtered.filter(t => t.type === 'expense').forEach(function(t){
+    const desc = (t.description || '').trim() || '(brez opisa)';
+    if (!_pieSubMap[t.category_id]) _pieSubMap[t.category_id] = {};
+    _pieSubMap[t.category_id][desc] = (_pieSubMap[t.category_id][desc] || 0) + Number(t.amount);
+  });
+  window._pieCids = cids;
+  window._pieSubMap = _pieSubMap;
+  // Attach click handler on canvas via Chart.js getElementsAtEventForMode
+  const _pieCanvas = document.getElementById('overviewPie');
+  if (_pieCanvas && !_pieCanvas._drillBound) {
+    _pieCanvas._drillBound = true;
+    _pieCanvas.style.cursor = 'pointer';
+    _pieCanvas.addEventListener('click', function(evt){
+      if (!chartPie) return;
+      const pts = chartPie.getElementsAtEventForMode(evt, 'nearest', { intersect: true }, false);
+      if (!pts.length) {
+        const sl = document.getElementById('overviewSubList'); if (sl) sl.innerHTML = '';
+        if (_pieCanvas._activeIdx !== undefined) _pieCanvas._activeIdx = undefined;
+        return;
+      }
+      const idx = pts[0].index;
+      const cid = (window._pieCids || [])[idx];
+      const sl = document.getElementById('overviewSubList');
+      if (!sl || !cid) return;
+      if (_pieCanvas._activeIdx === idx) {
+        sl.innerHTML = ''; _pieCanvas._activeIdx = undefined; return;
+      }
+      _pieCanvas._activeIdx = idx;
+      const subs = (window._pieSubMap && window._pieSubMap[cid]) || {};
+      const entries = Object.entries(subs).sort(function(a,b){ return b[1] - a[1]; });
+      const total = entries.reduce(function(s,e){ return s + e[1]; }, 0);
+      function fmt(n){ return n.toLocaleString('sl-SI', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' €'; }
+      function esc(s){ const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+      const catName = ((typeof DataStore !== 'undefined' && DataStore.getCategory(cid)) || {}).name || cid;
+      if (!entries.length) {
+        sl.innerHTML = '<li class="pie-sub-header">' + esc(catName) + '</li><li class="sub-empty">Ni postavk</li>';
+      } else {
+        sl.innerHTML = '<li class="pie-sub-header">' + esc(catName) + ' — ' + fmt(total) + '</li>' + entries.map(function(e){
+          const pct = total > 0 ? Math.round(e[1] / total * 100) : 0;
+          return '<li class="sub-item"><span class="sub-bar-bg" style="width:' + pct + '%"></span><span class="sub-name">' + esc(e[0]) + '</span><span class="sub-pct">' + pct + '%</span><span class="sub-sum">' + esc(fmt(e[1])) + '</span></li>';
+        }).join('');
+      }
+    });
+  }
+
   }
 
   const recent = [...txs].sort((a,b) => b.date.localeCompare(a.date) || (b.created_at||'').localeCompare(a.created_at||'')).slice(0, 5);
