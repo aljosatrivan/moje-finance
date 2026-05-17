@@ -1166,7 +1166,7 @@ document.addEventListener('DOMContentLoaded', boot);
   async function fetchTopUnreadEmails(n) {
     n = n || 5;
     try {
-      const tok = (window.state && state.accessToken) || null;
+      const tok = (typeof state !== 'undefined' && state.accessToken) || null;
       if (!tok) return { error: 'no-token' };
       const r1 = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages?q=is:unread+in:inbox&maxResults=' + n, {
         headers: { Authorization: 'Bearer ' + tok }
@@ -1201,7 +1201,7 @@ document.addEventListener('DOMContentLoaded', boot);
   async function fetchTopTransactions(n) {
     n = n || 5;
     try {
-      const tok = (window.state && state.accessToken) || null;
+      const tok = (typeof state !== 'undefined' && state.accessToken) || null;
       if (!tok) return null;
       const SHEET_NAME = 'Moje finance — podatki';
       const q = encodeURIComponent("name='" + SHEET_NAME + "' and mimeType='application/vnd.google-apps.spreadsheet' and trashed=false");
@@ -1298,7 +1298,7 @@ document.addEventListener('DOMContentLoaded', boot);
   // ===== Per-account tiles + sidebar submenu =====
   async function fetchFinanceAccountsAndMonth() {
     try {
-      const tok = (window.state && state.accessToken) || null;
+      const tok = (typeof state !== 'undefined' && state.accessToken) || null;
       if (!tok) return null;
       const SHEET_NAME = 'Moje finance — podatki';
       const q = encodeURIComponent("name='" + SHEET_NAME + "' and mimeType='application/vnd.google-apps.spreadsheet' and trashed=false");
@@ -1389,13 +1389,25 @@ document.addEventListener('DOMContentLoaded', boot);
     window.loadHomeWidgets = loadAccountsTiles;
   }
   
-  // Wrap goHome to also load widgets
-  if (typeof window.goHome === 'function') {
-    const _ogh = window.goHome;
-    window.goHome = function() { _ogh.apply(this, arguments); setTimeout(loadHomeWidgets, 100); };
-  }
-  // Also call after auth completion
-  window.addEventListener('cowork:home-rendered', loadHomeWidgets);
+  // MutationObserver — fires loadHomeWidgets whenever the welcome HTML is rendered
+  (function(){
+    const ca = document.getElementById('contentArea');
+    if (!ca) return;
+    let lastLoaded = 0;
+    const trigger = function() {
+      if (document.getElementById('widgetMailList') || document.getElementById('accountsTiles')) {
+        const now = Date.now();
+        if (now - lastLoaded < 500) return;  // debounce
+        lastLoaded = now;
+        if (typeof loadHomeWidgets === 'function') loadHomeWidgets();
+      }
+    };
+    const mo = new MutationObserver(trigger);
+    mo.observe(ca, { childList: true, subtree: true });
+    // Initial check after a moment
+    setTimeout(trigger, 300);
+    setTimeout(trigger, 1500);
+  })();
   </script>
 </body>
 </html>
