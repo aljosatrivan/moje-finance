@@ -427,7 +427,7 @@
     .mail-badge { display: inline-block; font-size: 9px; font-weight: 700; letter-spacing: 0.5px; padding: 1px 5px; border-radius: 4px; margin-right: 6px; vertical-align: middle; }
     .mail-badge-direct { background: #22c55e; color: #052e16; }
     .mail-badge-cc { background: #475569; color: #e2e8f0; }
-    .widget-list-items .item-snippet { font-size: 12px; opacity: 0.5; margin-top: 4px; line-height: 1.35; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+    .widget-list-items .item-snippet { font-size: 12px; opacity: 0.65; margin-top: 4px; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
     .widgets-grid-cal { grid-template-columns: 1fr 1fr; }
     @media (max-width: 720px) { .widgets-grid-cal { grid-template-columns: 1fr; } }
   </style>
@@ -1179,6 +1179,59 @@ document.addEventListener('DOMContentLoaded', boot);
   function openMailExternal() {
     window.open('https://mail.google.com/mail/u/0/', '_blank', 'noopener,noreferrer');
   }
+  // Shared helpers
+  function _decodeB64UrlMail(s){
+    try {
+      const std = (s || '').replace(/-/g, '+').replace(/_/g, '/');
+      return decodeURIComponent(escape(atob(std)));
+    } catch(e){ return ''; }
+  }
+  function _extractText(payload, depth){
+    if (!payload || (depth || 0) > 5) return '';
+    if (payload.body && payload.body.data && (payload.mimeType || '').startsWith('text/plain')) return _decodeB64UrlMail(payload.body.data);
+    if (payload.parts) {
+      for (const p of payload.parts) {
+        if ((p.mimeType || '').startsWith('text/plain') && p.body && p.body.data) return _decodeB64UrlMail(p.body.data);
+      }
+      for (const p of payload.parts) {
+        const t = _extractText(p, (depth || 0) + 1);
+        if (t) return t;
+      }
+      for (const p of payload.parts) {
+        if ((p.mimeType || '').startsWith('text/html') && p.body && p.body.data) {
+          return _decodeB64UrlMail(p.body.data).replace(/<style[\s\S]*?<\/style>/gi, ' ').replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/\s+/g, ' ').trim();
+        }
+      }
+    }
+    return '';
+  }
+  function _summarizeEmail(text, maxSentences) {
+    maxSentences = maxSentences || 3;
+    if (!text) return '';
+    // Strip quoted replies and signature blocks
+    const lines = text.split(/\r?\n/);
+    const keepLines = [];
+    let inSig = false;
+    const greetingPat = /^\s*(pozdravljeni|pozdravljen|lep pozdrav|lp[,!.]?|spo[šs]tovani|dober dan|živijo|hi[,!.]?|hello|dragi|draga)/i;
+    for (const ln of lines) {
+      const t = ln.trim();
+      if (!t) continue;
+      if (t === '--' || t === '---') { inSig = true; continue; }
+      if (inSig) continue;
+      if (t.startsWith('>')) continue;
+      if (/^on .* wrote:|^od:|^poslano:|^datum:|^subject:|^from:|^sent:|^to:|^kdaj:/i.test(t)) continue;
+      if (/^\s*--+\s*$/.test(t)) { inSig = true; continue; }
+      if (greetingPat.test(t)) continue;
+      keepLines.push(t);
+    }
+    const joined = keepLines.join(' ').replace(/\s+/g, ' ').trim();
+    if (!joined) return '';
+    // Split into sentences and take first N
+    const sentences = joined.split(/(?<=[.!?])\s+(?=[A-ZČŠŽ])/g).filter(function(s){ return s.trim().length >= 8; });
+    let out = sentences.slice(0, maxSentences).join(' ');
+    if (out.length > 380) out = out.substring(0, 380).replace(/\s+\S*$/, '') + '…';
+    return out;
+  }
   async function fetchTopUnreadEmails(n) {
     n = n || 5;
     try {
@@ -1201,7 +1254,7 @@ document.addEventListener('DOMContentLoaded', boot);
       } catch(e) {}
       if (!j1.messages || !j1.messages.length) return { emails: [], totalUnread: 0 };
       const emails = await Promise.all(j1.messages.map(async function(m){
-        const r2 = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/' + m.id + '?format=metadata&metadataHeaders=Subject&metadataHeaders=From&metadataHeaders=Date&metadataHeaders=To&metadataHeaders=Cc', {
+        const r2 = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/' + m.id + '?format=full', {
           headers: { Authorization: 'Bearer ' + tok }
         });
         if (!r2.ok) return null;
@@ -1211,11 +1264,8 @@ document.addEventListener('DOMContentLoaded', boot);
           const found = hdrs.find(function(h){ return h.name.toLowerCase() === name.toLowerCase(); });
           return found ? found.value : '';
         }
-        const myEmail = (state.email || '').toLowerCase();
-        const toRaw = getH('To').toLowerCase();
-        const ccRaw = getH('Cc').toLowerCase();
-        const directToMe = myEmail && toRaw.includes(myEmail);
-        const onlyCcMe = myEmail && !directToMe && ccRaw.includes(myEmail);
+        const body = _extractText(j2.payload) || '';
+        const summary = _summarizeEmail(body, 3) || (j2.snippet || '').replace(/\s+/g, ' ').substring(0, 220);
         return {
           id: m.id,
           subject: getH('Subject') || '(brez naslova)',
@@ -1223,9 +1273,7 @@ document.addEventListener('DOMContentLoaded', boot);
           to: getH('To'),
           date: getH('Date'),
           internalDate: j2.internalDate ? new Date(parseInt(j2.internalDate, 10)) : null,
-          snippet: (j2.snippet || '').replace(/\s+/g, ' ').substring(0, 140),
-          directToMe: directToMe,
-          onlyCcMe: onlyCcMe,
+          snippet: summary,
         };
       }));
       return { emails: emails.filter(function(e){ return e; }), totalUnread: totalUnread };
@@ -1554,17 +1602,17 @@ document.addEventListener('DOMContentLoaded', boot);
           // Sole recipient: only me in To, no CC (or only me in CC)
           const soleRecipient = meInTo && toCount === 1 && (ccCount === 0 || (ccCount === 1 && meInCc));
           // Body text (limit search for perf)
-          let bodyText = '';
-          if (!soleRecipient) bodyText = (extractText(j2.payload) || '').substring(0, 4000);
-          const haystack = subject + ' ' + bodyText;
+          const fullBody = _extractText(j2.payload) || '';
+          const haystack = subject + ' ' + fullBody.substring(0, 4000);
           const explicitMention = !soleRecipient && mentionsMe(haystack);
+          const summary = _summarizeEmail(fullBody, 3) || (j2.snippet || '').replace(/\s+/g, ' ').substring(0, 220);
           return {
             id: m.id,
             subject: subject || '(brez naslova)',
             from: from,
             date: getH('Date'),
             internalDate: j2.internalDate ? new Date(parseInt(j2.internalDate, 10)) : null,
-            snippet: (j2.snippet || '').replace(/\s+/g, ' ').substring(0, 140),
+            snippet: summary,
             soleRecipient: soleRecipient,
             explicitMention: explicitMention,
             isForMe: soleRecipient || explicitMention,
