@@ -1258,10 +1258,13 @@ document.addEventListener('DOMContentLoaded', boot);
     } catch (e) { return ''; }
   }
   function esc(s) { const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
-  // Cached results survive failed refreshes
-  window._lastMailRes = window._lastMailRes || null;
-  window._lastTxs = window._lastTxs || null;
-  window._lastAccData = window._lastAccData || null;
+  // Cached results survive failed refreshes (localStorage-backed)
+  function _cacheKey(k){ return 'dashboard_cache_' + k; }
+  function _cacheGet(k){ try { const v = localStorage.getItem(_cacheKey(k)); return v ? JSON.parse(v) : null; } catch(e){ return null; } }
+  function _cacheSet(k, v){ try { localStorage.setItem(_cacheKey(k), JSON.stringify(v)); } catch(e){} }
+  if (typeof window._lastMailRes === 'undefined') window._lastMailRes = _cacheGet('mail');
+  if (typeof window._lastTxs === 'undefined') window._lastTxs = _cacheGet('txs');
+  if (typeof window._lastAccData === 'undefined') window._lastAccData = _cacheGet('acc');
   async function loadHomeWidgets() {
     // Mail
     const mailList = document.getElementById('widgetMailList');
@@ -1270,7 +1273,7 @@ document.addEventListener('DOMContentLoaded', boot);
       const res = await fetchTopUnreadEmails(5);
       const ok = res && !res.error && Array.isArray(res.emails);
       const useRes = ok ? res : window._lastMailRes;
-      if (ok) window._lastMailRes = res;
+      if (ok && (res.emails.length > 0 || res.totalUnread === 0)) { window._lastMailRes = res; _cacheSet('mail', res); }
       if (useRes && !useRes.error) {
         mailCount.textContent = String(useRes.totalUnread || 0);
         if (!useRes.emails.length) {
@@ -1298,8 +1301,8 @@ document.addEventListener('DOMContentLoaded', boot);
     const txList = document.getElementById('widgetTxList');
     if (txList) {
       const fresh = await fetchTopTransactions(5);
-      const useTxs = (fresh !== null && fresh !== undefined) ? fresh : window._lastTxs;
-      if (fresh !== null && fresh !== undefined) window._lastTxs = fresh;
+      const useTxs = (fresh !== null && fresh !== undefined && fresh.length > 0) ? fresh : window._lastTxs;
+      if (fresh && fresh.length > 0) { window._lastTxs = fresh; _cacheSet('txs', fresh); }
       const txs = useTxs;
       if (!txs) { txList.innerHTML = '<li class="widget-list-error">Napaka pri branju finančnih podatkov.</li>'; }
       else if (!txs.length) { txList.innerHTML = '<li class="widget-empty">Ni transakcij.</li>'; }
@@ -1353,8 +1356,9 @@ document.addEventListener('DOMContentLoaded', boot);
     const sub = document.getElementById('financeAccountsSubmenu');
     if (!el && !sub) return;
     const fresh = await fetchFinanceAccountsAndMonth();
-    const data = fresh || window._lastAccData;
-    if (fresh) window._lastAccData = fresh;
+    const goodFresh = fresh && fresh.accounts && fresh.accounts.length > 0;
+    const data = goodFresh ? fresh : window._lastAccData;
+    if (goodFresh) { window._lastAccData = fresh; _cacheSet('acc', fresh); }
     if (!data) {
       if (el) el.innerHTML = '<div class="acc-tile-empty">Napaka pri branju računov</div>';
       return;
