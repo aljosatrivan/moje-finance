@@ -1807,20 +1807,27 @@ document.addEventListener('DOMContentLoaded', () => {
   (function(){
     window._statsDisabledCats = window._statsDisabledCats || new Set();
     function _populateMirrors() {
-      const accts = (typeof state !== 'undefined' && state.accounts) || [];
+      const src = document.getElementById('filterAccount');
+      if (!src) return;
       ['filterAccountOverview', 'filterAccountStats'].forEach(function(id){
-        const sel = document.getElementById(id);
-        if (!sel) return;
-        const prev = sel.value || 'all';
-        sel.innerHTML = '<option value="all">Vsi računi</option>';
-        for (const a of accts) {
-          const o = document.createElement('option');
-          o.value = a.id;
-          o.textContent = (a.icon ? a.icon + ' ' : '') + a.name;
-          sel.appendChild(o);
-        }
-        sel.value = prev;
+        const dst = document.getElementById(id);
+        if (!dst) return;
+        const prev = dst.value || 'all';
+        dst.innerHTML = src.innerHTML;
+        // Preserve selection if option still exists
+        if (Array.from(dst.options).some(function(o){ return o.value === prev; })) dst.value = prev;
+        else dst.value = 'all';
       });
+    }
+    // Watch filterAccount for changes and propagate (since refreshFilterAccounts is in closure scope)
+    function _watchFilterAccount() {
+      const src = document.getElementById('filterAccount');
+      if (!src || src._watched) return;
+      src._watched = true;
+      const mo = new MutationObserver(function(){ _populateMirrors(); });
+      mo.observe(src, { childList: true, subtree: true });
+      // Initial sync
+      _populateMirrors();
     }
     // Wrap refreshFilterAccounts to also populate mirrors
     if (typeof window.refreshFilterAccounts === 'function') {
@@ -1839,6 +1846,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (typeof renderAll === 'function') renderAll();
     }
     function _wire() {
+      _watchFilterAccount();
       _populateMirrors();
       ['filterAccountOverview', 'filterAccountStats'].forEach(function(id){
         const el = document.getElementById(id);
