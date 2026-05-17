@@ -1876,14 +1876,44 @@ document.addEventListener('DOMContentLoaded', boot);
       const itemsForFilter = recent.length > 0 ? recent : allItems;
       // Key for dedupe: normalized title (same article appears with different URLs across feeds)
       function _dedupeKey(n){ return _normalizeText((n.title || '').replace(/\s+/g, ' ').trim()); }
+      // Slovenian declension/derivation suffixes (empty = exact word, plus common forms)
+      const _SUFFIXES = new Set([
+        '', 'a','e','i','o','u',
+        'am','em','im','om','um','m',
+        'ov','ev','ih','ah','ami','ema','mi',
+        'ji','ja','je','jo','ju','jem','jev','jeva','jevo','jevi','jeve','jevih','jevimi',
+        'ki','ka','ke','ko','ku','kom','kov','ke','ka',
+        'ski','ska','sko','ske','ski','ških','skega','skemu','skim','skimi','skih',
+        'ec','ek','ce','ci','cev','ca','cu','com','cem',
+        'ti','te','tu','ta','tom','tem',
+        'inov','inova','inu','inom',
+        'na','no','nu','nom','ni','nih','nima','nimi','nem','nemu','nega','nimi'
+      ]);
       function _topicAtWordStart(text, topic){
         const t = _normalizeText(topic || '').trim();
         if (!t) return false;
         const txt = _normalizeText(text || '');
+        // Multi-word topic? Match as substring at word boundary (no suffix check)
+        if (t.indexOf(' ') !== -1) {
+          let i2 = 0;
+          while ((i2 = txt.indexOf(t, i2)) !== -1) {
+            const b = i2 === 0 ? '' : txt.charAt(i2 - 1);
+            if (!b || !/[a-z0-9]/.test(b)) return true;
+            i2++;
+          }
+          return false;
+        }
         let idx = 0;
         while ((idx = txt.indexOf(t, idx)) !== -1) {
           const before = idx === 0 ? '' : txt.charAt(idx - 1);
-          if (!before || !/[a-z0-9]/.test(before)) return true;
+          const wordStart = !before || !/[a-z0-9]/.test(before);
+          if (wordStart) {
+            // Find end of contiguous letters after match
+            let end = idx + t.length;
+            while (end < txt.length && /[a-z]/.test(txt.charAt(end))) end++;
+            const suffix = txt.substring(idx + t.length, end);
+            if (_SUFFIXES.has(suffix)) return true;
+          }
           idx++;
         }
         return false;
