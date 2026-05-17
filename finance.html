@@ -250,6 +250,22 @@
     .cat-bar-item { cursor: pointer; user-select: none; transition: opacity 0.15s; }
     .cat-bar-item.cat-disabled { opacity: 0.35; }
     .cat-bar-item.cat-disabled .cat-bar-fill { background: var(--border, #555) !important; }
+  
+    .account-summary { list-style: none; margin: 0; padding: 0; }
+    .account-summary li { display: grid; grid-template-columns: 1fr auto auto auto; gap: 10px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--border); }
+    .account-summary li:last-child { border-bottom: none; }
+    .account-summary .acc-name { font-weight: 600; display: flex; align-items: center; gap: 8px; min-width: 0; }
+    .account-summary .acc-name .acc-icon { font-size: 18px; }
+    .account-summary .acc-income { color: #22c55e; font-size: 13px; font-variant-numeric: tabular-nums; }
+    .account-summary .acc-expense { color: #ef4444; font-size: 13px; font-variant-numeric: tabular-nums; }
+    .account-summary .acc-balance { font-weight: 700; font-variant-numeric: tabular-nums; min-width: 80px; text-align: right; }
+    .account-summary .acc-balance.pos { color: #22c55e; }
+    .account-summary .acc-balance.neg { color: #ef4444; }
+    @media (max-width: 520px) {
+      .account-summary li { grid-template-columns: 1fr auto; grid-template-rows: auto auto; gap: 4px 10px; }
+      .account-summary .acc-income, .account-summary .acc-expense { grid-column: 1; }
+      .account-summary .acc-balance { grid-row: 1 / 3; grid-column: 2; align-self: center; }
+    }
   </style>
 </head>
 <body>
@@ -380,6 +396,10 @@
     <div class="card">
       <h2>Prihodki vs. odhodki</h2>
       <div class="chart-wrap"><canvas id="statsBar"></canvas></div>
+    </div>
+    <div class="card">
+      <h2>Stanje po računih</h2>
+      <ul id="accountSummary" class="account-summary"></ul>
     </div>
     <div class="card">
       <h2>Odhodki po kategorijah</h2>
@@ -1214,7 +1234,7 @@ function rangeFilter(txs) {
 }
 
 function renderStatistics() {
-  const _accSelSt = document.getElementById('filterAccountStats') || document.getElementById('filterAccount'); const _accValSt = _accSelSt ? _accSelSt.value : 'all'; const _txsForCatBars = rangeFilter(DataStore.getTransactions()).filter(t => _accValSt === 'all' || t.account_id === _accValSt); const _disabledCats = window._statsDisabledCats || new Set(); const txs = _txsForCatBars.filter(t => !_disabledCats.has(t.category_id));
+  const _accSelSt = document.getElementById('filterAccountStats') || document.getElementById('filterAccount'); const _accValSt = _accSelSt ? _accSelSt.value : 'all'; const _allTxsPeriod = rangeFilter(DataStore.getTransactions()); const _txsForCatBars = _allTxsPeriod.filter(t => _accValSt === 'all' || t.account_id === _accValSt); const _disabledCats = window._statsDisabledCats || new Set(); const txs = _txsForCatBars.filter(t => !_disabledCats.has(t.category_id));
   const byMonth = {};
   txs.forEach(t => {
     const m = t.date.slice(0, 7);
@@ -1241,6 +1261,37 @@ function renderStatistics() {
     }
   });
 
+  // Account summary card
+  (function(){
+    const _accs = (typeof state !== 'undefined' && state.accounts) || [];
+    const _accSum = {};
+    for (const a of _accs) _accSum[a.id] = { name: a.name, icon: a.icon, income: 0, expense: 0 };
+    let _hasOther = false;
+    for (const t of _allTxsPeriod) {
+      const aid = t.account_id || '__none__';
+      if (!_accSum[aid]) { _accSum[aid] = { name: 'Brez računa', icon: '❔', income: 0, expense: 0 }; _hasOther = true; }
+      if (t.type === 'income') _accSum[aid].income += Number(t.amount);
+      else if (t.type === 'expense') _accSum[aid].expense += Number(t.amount);
+    }
+    const _accSumEl = document.getElementById('accountSummary');
+    if (_accSumEl) {
+      const fmt = function(n){ return (n||0).toLocaleString('sl-SI', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' €'; };
+      const ids = Object.keys(_accSum).filter(id => _accSum[id].income > 0 || _accSum[id].expense > 0 || id !== '__none__');
+      if (!ids.length) { _accSumEl.innerHTML = '<li style="opacity:0.6;padding:12px 0;">Ni transakcij v izbranem obdobju</li>'; }
+      else {
+        _accSumEl.innerHTML = ids.map(function(id){
+          const a = _accSum[id];
+          const bal = a.income - a.expense;
+          const cls = bal >= 0 ? 'pos' : 'neg';
+          const sign = bal >= 0 ? '+' : '−';
+          return '<li><span class="acc-name"><span class="acc-icon">' + (a.icon || '🏦') + '</span>' + a.name + '</span>' +
+            '<span class="acc-income">+' + fmt(a.income) + '</span>' +
+            '<span class="acc-expense">−' + fmt(a.expense) + '</span>' +
+            '<span class="acc-balance ' + cls + '">' + sign + fmt(Math.abs(bal)) + '</span></li>';
+        }).join('');
+      }
+    }
+  })();
   const catSums = {};
   _txsForCatBars.filter(t => t.type === 'expense').forEach(t => { catSums[t.category_id] = (catSums[t.category_id] || 0) + Number(t.amount); });
   const total = Object.values(catSums).reduce((a,b) => a+b, 0);
