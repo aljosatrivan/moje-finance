@@ -1900,7 +1900,7 @@ document.addEventListener('DOMContentLoaded', boot);
       }).filter(Boolean);
       function _topicMatches(text) {
         const norm = _normalizeText(text || '');
-        return _topicPatterns.some(function(re){ return re.test(norm); });
+        return false;
       }
       function _match(arr){
         return arr.filter(function(n){ return _topicMatches(n.title + ' ' + n.desc); });
