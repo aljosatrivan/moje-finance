@@ -1469,9 +1469,12 @@ function wireEvents() {
     const txs = data.transactions;
     if (!confirm('Uvoz: dodam ' + newCats.length + ' kategorij in ' + txs.length + ' transakcij. Nadaljujem?')) return;
     const findByName = (n) => DataStore.getCategories().find(c => c.name.toLowerCase() === n.toLowerCase());
+    const norm = s => s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
     const cats = DataStore.getCategories();
-    const tA = cats.find(c => { const n = c.name.toLowerCase(); return n.includes('terap') && n.includes('aljoš'); })?.id;
-    const tM = cats.find(c => { const n = c.name.toLowerCase(); return n.includes('terap') && n.includes('amal'); })?.id;
+    const tA = cats.find(c => { const n = norm(c.name); return n.includes('terap') && n.includes('aljos'); })?.id;
+    const tM = cats.find(c => { const n = norm(c.name); return n.includes('terap') && n.includes('amal'); })?.id;
+    console.log('Import: all categories:', cats.map(c=>c.name+' ['+c.id+']'));
+    console.log('Import: matched terapija aljosa:', tA, 'amal:', tM);
     if (!tA || !tM) { alert('Manjkata kategoriji Terapija Aljoša ali Terapija Amal.'); return; }
     for (const c of newCats) { if (!DataStore.getCategory(c.id)) DataStore.addCategory(c); }
     for (const t of txs) {
