@@ -1,0 +1,62 @@
+{
+  "_generated_at": "2026-05-17T14:07:34.769Z",
+  "_generator": "claude-cowork-v1",
+  "_note": "AI povzetki, generirani v Cowork (Claude). Trenutni vir: subject + To + Cc + Gmail snippet. Migracija na Cloudflare Worker, ko bo Gregor postavil server.",
+  "summaries": {
+    "19e26f02da6335d3": {
+      "summary": "Domen iz Naturalica Foods pošilja pregled vseh napak, ki so se pojavile ob prehodu iz testne v produkcijsko verzijo. Prosi za nujne odprave. Konkretno omenja masko 2377 v naročilih.",
+      "isForMe": false,
+      "classification": "team-wide"
+    },
+    "19e2165554c95b24": {
+      "summary": "Andreja sporoča, da je skladišče odprto. Kratko obvestilo kot odgovor na tvoje prejšnje vprašanje glede Mercator OLZ Merit.",
+      "isForMe": true,
+      "classification": "sole-recipient"
+    },
+    "19e215b922fae54a": {
+      "summary": "Klemen Bavdek (PRIORIA) forwardira sporočilo od Martine iz Atelier Rebul. Prosi te za pregled kontnega načrta.",
+      "isForMe": true,
+      "classification": "sole-recipient"
+    },
+    "19e01cdcc4ea7f88": {
+      "summary": "Andreja prosi Zlatka in Leona naj pripravita potrebne podatke o pakirnih količinah v PB za izvoz do naslednjega tedna — potem bodo skupaj naredili uvoz.",
+      "isForMe": false,
+      "classification": "team-wide"
+    },
+    "19df700469690230": {
+      "summary": "Amal forwardira mail od Jeanne Wolff-Bernstein z marčevskim računom in te prosi, da poravnaš.",
+      "isForMe": true,
+      "classification": "sole-recipient"
+    },
+    "19df6ffde7f8b463": {
+      "summary": "Amal te prosi za plačilo (kratko sporočilo brez dodatnih detajlov).",
+      "isForMe": true,
+      "classification": "sole-recipient"
+    },
+    "19df2091a892c3a5": {
+      "summary": "Andreja pošilja predlogo za uvoz naročil dobaviteljem in razlaga, kaj pomeni datum v predlogi (predvidena dobava). Spodaj so že uvožena naročila za preverbo vsebine.",
+      "isForMe": false,
+      "classification": "team-wide"
+    },
+    "19e215b922fae54a__": {
+      "summary": "",
+      "isForMe": false,
+      "classification": "skip"
+    },
+    "19df2091a892c3a5_p": {
+      "summary": "",
+      "isForMe": false,
+      "classification": "skip"
+    },
+    "19df1dd9aa77911f": {
+      "summary": "Nastja iz Datacarrot razlaga, da so pripravili nov endpoint basketFinish, ki sprejema JSON s podatki o naslovih (billingAddress, shippingAddress) in pravnih osebah (partnerIdLegalPerson).",
+      "isForMe": false,
+      "classification": "team-wide"
+    },
+    "19dd3e8996a9efa0": {
+      "summary": "Matevz iz Datacarrot pošilja predlog integracije Shopify ↔ Bilumina, izhaja iz zadnjih informacij o kreiranju partnerjev.",
+      "isForMe": true,
+      "classification": "sole-recipient"
+    }
+  }
+}
