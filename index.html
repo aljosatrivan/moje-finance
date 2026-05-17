@@ -431,6 +431,7 @@
     .widget-list-items .item-snippet.ai-summary { opacity: 0.85; border-left: 2px solid #6366f1; padding-left: 6px; }
     .widget-list-items .item-snippet.ai-summary::before { content: '🤖 '; opacity: 0.7; }
     .widgets-grid-cal { grid-template-columns: 1fr 1fr; }
+    .widgets-grid-news { grid-template-columns: 1fr; }
     @media (max-width: 720px) { .widgets-grid-cal { grid-template-columns: 1fr; } }
   </style>
 </head>
@@ -1076,6 +1077,19 @@ function renderWelcome() {
       </div>
       <div class="section-title">Računi</div>
       <div class="accounts-tiles" id="accountsTiles"><div class="acc-tile-empty">Nalaganje…</div></div>
+      <div class="section-title">Novice</div>
+      <div class="widgets-grid widgets-grid-news">
+        <div class="widget widget-list" id="widgetNews">
+          <div class="widget-list-header" onclick="window.open('https://www.rtvslo.si/', '_blank', 'noopener,noreferrer')">
+            <span class="widget-icon">📰</span>
+            <span class="widget-title">RTV Slo — tvoji topiki</span>
+            <span class="widget-count" id="widgetNewsCount">—</span>
+          </div>
+          <ul class="widget-list-items" id="widgetNewsList">
+            <li class="widget-empty">Nalaganje…</li>
+          </ul>
+        </div>
+      </div>
       
       <div class="section-title">Službeno (Bilumina)</div>
       <div class="cards-grid">
@@ -1677,6 +1691,90 @@ document.addEventListener('DOMContentLoaded', boot);
       else ul.innerHTML = '<li class="widget-list-error">Napaka: ' + esc((res && res.error) || 'neznana') + '</li>';
     }
   }
+  // News widget — RTV Slo RSS via CORS proxy
+  const DEFAULT_NEWS_TOPICS = ['Palestina', 'Palestin', 'Iran', 'Pogačar', 'Roglič', 'Dončić', 'Doncic'];
+  function _normalizeText(s){ return (s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, ''); }
+  async function fetchNewsFiltered() {
+    try {
+      const topics = (function(){
+        try { const c = JSON.parse(localStorage.getItem('dashboard_news_topics') || 'null'); if (Array.isArray(c) && c.length) return c; } catch(e){}
+        return DEFAULT_NEWS_TOPICS;
+      })();
+      const FEEDS = [
+        'https://www.rtvslo.si/feeds/00.xml',
+      ];
+      const allItems = [];
+      for (const feed of FEEDS) {
+        try {
+          const url = 'https://corsproxy.io/?url=' + encodeURIComponent(feed);
+          const r = await fetch(url);
+          if (!r.ok) continue;
+          const text = await r.text();
+          const doc = new DOMParser().parseFromString(text, 'text/xml');
+          const items = Array.from(doc.querySelectorAll('item'));
+          for (const it of items) {
+            const title = ((it.querySelector('title') || {}).textContent || '').trim();
+            const desc = ((it.querySelector('description') || {}).textContent || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+            const link = ((it.querySelector('link') || {}).textContent || '').trim();
+            const pub = ((it.querySelector('pubDate') || {}).textContent || '').trim();
+            allItems.push({ title, desc, link, pub, pubDate: new Date(pub) });
+          }
+        } catch(e){}
+      }
+      const matched = allItems.filter(function(n){
+        const hay = _normalizeText(n.title + ' ' + n.desc);
+        return topics.some(function(t){ return hay.includes(_normalizeText(t)); });
+      });
+      // De-dup by link
+      const seen = new Set();
+      const unique = [];
+      for (const n of matched) { if (!seen.has(n.link)) { seen.add(n.link); unique.push(n); } }
+      // Sort by date desc
+      unique.sort(function(a,b){ return (b.pubDate ? b.pubDate.getTime() : 0) - (a.pubDate ? a.pubDate.getTime() : 0); });
+      return { items: unique.slice(0, 5), totalMatched: unique.length, topics };
+    } catch(e) { return { error: e.message }; }
+  }
+  function fmtNewsDate(d) {
+    if (!d) return '';
+    try {
+      const dt = (d instanceof Date) ? d : new Date(d);
+      if (isNaN(dt)) return '';
+      const now = new Date();
+      const ms = now - dt;
+      const m = Math.floor(ms / 60000);
+      if (m < 60) return m + ' min';
+      const h = Math.floor(ms / 3600000);
+      if (h < 24) return h + ' h';
+      const days = Math.floor(ms / 86400000);
+      if (days < 7) return days + ' d';
+      return dt.toLocaleDateString('sl-SI', { day: '2-digit', month: '2-digit' });
+    } catch(e){ return ''; }
+  }
+  window._lastNews = (typeof window._lastNews !== 'undefined') ? window._lastNews : _cacheGet('news');
+  async function loadNewsWidget() {
+    const ul = document.getElementById('widgetNewsList');
+    const cnt = document.getElementById('widgetNewsCount');
+    if (!ul) return;
+    const res = await fetchNewsFiltered();
+    const ok = res && !res.error && Array.isArray(res.items);
+    const useRes = ok ? res : window._lastNews;
+    if (ok && res.items.length > 0) { window._lastNews = res; _cacheSet('news', res); }
+    if (useRes && Array.isArray(useRes.items)) {
+      if (cnt) cnt.textContent = String(useRes.totalMatched || useRes.items.length || 0);
+      if (!useRes.items.length) ul.innerHTML = '<li class="widget-empty">Trenutno ni novic za tvoje topike</li>';
+      else {
+        ul.innerHTML = useRes.items.map(function(n){
+          const link = n.link.replace(/"/g, '');
+          return '<li onclick="window.open(\'' + link + '\', \'_blank\', \'noopener,noreferrer\')" style="cursor:pointer">' +
+            '<div class="item-main">' + esc(n.title) + (n.desc ? '<div class="item-snippet">' + esc(n.desc.substring(0, 200)) + '</div>' : '') + '</div>' +
+            '<span class="item-date">' + esc(fmtNewsDate(n.pubDate)) + '</span></li>';
+        }).join('');
+      }
+    } else {
+      if (cnt) cnt.textContent = '?';
+      ul.innerHTML = '<li class="widget-list-error">Ni mogoče naložiti novic.</li>';
+    }
+  }
   async function loadCalendarWidget() {
     const ul = document.getElementById('widgetCalList');
     if (!ul) return;
@@ -1704,7 +1802,7 @@ document.addEventListener('DOMContentLoaded', boot);
   // Wrap loadHomeWidgets to also load tiles
   if (typeof window.loadHomeWidgets === 'function') {
     const _olhw = window.loadHomeWidgets;
-    window.loadHomeWidgets = function() { _olhw.apply(this, arguments); loadAccountsTiles(); loadCalendarWidget(); loadPersonalMails(); };
+    window.loadHomeWidgets = function() { _olhw.apply(this, arguments); loadAccountsTiles(); loadCalendarWidget(); loadPersonalMails(); loadNewsWidget(); };
   } else {
     window.loadHomeWidgets = function() { loadAccountsTiles(); loadCalendarWidget(); };
   }
