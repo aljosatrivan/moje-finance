@@ -1914,8 +1914,9 @@ document.addEventListener('DOMContentLoaded', boot);
           if (!seenKeys.has(k)) { matched.push(n); seenKeys.add(k); }
         }
       }
-      // If still < N, do deep body matching on top unmatched items (max 25 parallel fetches)
-      if (matched.length < __numNews) {
+      // Deep body match — only if user opted in via Settings
+      const _deepBody = (function(){ try { return JSON.parse(localStorage.getItem('dashboard_settings') || '{}').newsDeepBody === true; } catch(e){ return false; } })();
+      if (_deepBody && matched.length < __numNews) {
         const seenKeys = new Set(matched.map(_dedupeKey));
         const candidates = itemsForFilter
           .filter(function(n){ return !seenKeys.has(_dedupeKey(n)); })
@@ -2059,6 +2060,7 @@ document.addEventListener('DOMContentLoaded', boot);
     refMail: 30, refForMe: 300, refTx: 30, refCal: 120, refAcc: 30, refNews: 60,
     newsCount: 10,
     srcRtv: true, src24ur: true, srcSiol: true,
+    newsDeepBody: false,
   };
   function getSettings() {
     try { return Object.assign({}, DEFAULT_SETTINGS, JSON.parse(localStorage.getItem('dashboard_settings') || '{}')); }
@@ -2089,6 +2091,8 @@ document.addEventListener('DOMContentLoaded', boot);
       const el = document.getElementById(id);
       if (el) el.checked = (s[srcMap[id]] !== false);
     }
+    const dbEl = document.getElementById('setNewsDeepBody');
+    if (dbEl) dbEl.checked = (s.newsDeepBody === true);
     // Biometric (async availability check)
     const biomChk = document.getElementById('setBiometric');
     const biomStatus = document.getElementById('biometricStatus');
@@ -2132,6 +2136,7 @@ document.addEventListener('DOMContentLoaded', boot);
       srcRtv: document.getElementById('setSrcRtv') ? document.getElementById('setSrcRtv').checked : true,
       src24ur: document.getElementById('setSrc24ur') ? document.getElementById('setSrc24ur').checked : true,
       srcSiol: document.getElementById('setSrcSiol') ? document.getElementById('setSrcSiol').checked : true,
+      newsDeepBody: document.getElementById('setNewsDeepBody') ? document.getElementById('setNewsDeepBody').checked : false,
     };
     saveSettingsObj(s);
     // Biometric: register on first enable, clear on disable
@@ -2153,8 +2158,8 @@ document.addEventListener('DOMContentLoaded', boot);
     closeSettings();
     applySettingsVisibility();
     // If news topics changed, invalidate cache + show loading
-    const oldSources = JSON.stringify({a: (_oldSettings || {}).srcRtv, b: (_oldSettings || {}).src24ur, c: (_oldSettings || {}).srcSiol, n: (_oldSettings || {}).newsCount});
-    const newSources = JSON.stringify({a: s.srcRtv, b: s.src24ur, c: s.srcSiol, n: s.newsCount});
+    const oldSources = JSON.stringify({a: (_oldSettings || {}).srcRtv, b: (_oldSettings || {}).src24ur, c: (_oldSettings || {}).srcSiol, n: (_oldSettings || {}).newsCount, d: (_oldSettings || {}).newsDeepBody});
+    const newSources = JSON.stringify({a: s.srcRtv, b: s.src24ur, c: s.srcSiol, n: s.newsCount, d: s.newsDeepBody});
     if (oldTopics !== JSON.stringify(topics) || oldSources !== newSources) {
       window._lastNews = null;
       try { localStorage.removeItem('dashboard_cache_news'); } catch(e){}
@@ -2290,6 +2295,7 @@ document.addEventListener('DOMContentLoaded', boot);
             <label class="settings-row"><input type="checkbox" id="setSrcSiol" checked> 🟡 siol.net</label>
           </div>
           <div class="refresh-row" style="margin-top:10px"><span>📰 Število novic za prikaz</span><input type="number" min="1" max="30" id="setNewsCount"> </div>
+          <label class="settings-row" style="margin-top:6px"><input type="checkbox" id="setNewsDeepBody"> 🔬 Iskanje v telesu članka (več zadetkov, lahko vključi nerelevantne)</label>
         </div>
       </div>
       <div class="settings-footer">
