@@ -245,8 +245,12 @@
     nav.tabs button .icon { font-size: 17px; }
   }
 
-    .view-toolbar { padding: 8px 16px 4px; }
-    .view-toolbar select { padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--card, var(--bg)); color: var(--text); font: inherit; width: 100%; max-width: 320px; }
+    .view-toolbar { padding: 4px 16px 0; display: flex; justify-content: flex-end; align-items: center; gap: 8px; }
+    .view-toolbar::before { content: 'Račun:'; font-size: 12px; opacity: 0.55; text-transform: uppercase; letter-spacing: 0.4px; }
+    .view-toolbar select { padding: 5px 28px 5px 10px; border-radius: 6px; border: 1px solid var(--border); background: transparent; color: var(--text); font: inherit; font-size: 13px; width: auto; min-width: 130px; max-width: 220px; cursor: pointer; appearance: none; -webkit-appearance: none; background-image: linear-gradient(45deg, transparent 50%, currentColor 50%), linear-gradient(135deg, currentColor 50%, transparent 50%); background-position: calc(100% - 14px) 50%, calc(100% - 9px) 50%; background-size: 5px 5px, 5px 5px; background-repeat: no-repeat; opacity: 0.85; }
+    .view-toolbar select:hover { opacity: 1; border-color: var(--accent, #6366f1); }
+    .view-toolbar select:focus { outline: none; opacity: 1; border-color: var(--accent, #6366f1); }
+    @media (max-width: 480px) { .view-toolbar select { font-size: 12px; min-width: 110px; } }
     .cat-bar-item { cursor: pointer; user-select: none; transition: opacity 0.15s; }
     .cat-bar-item.cat-disabled { opacity: 0.35; }
     .cat-bar-item.cat-disabled .cat-bar-fill { background: var(--border, #555) !important; }
@@ -1932,7 +1936,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const el = document.getElementById(id);
         if (el && el.value !== v) el.value = v;
       });
-      if (typeof renderAll === 'function') renderAll();
+      // Dispatch change on the source-of-truth filterAccount to trigger ALL listeners (renderTransactions + renderAll)
+      const fa = document.getElementById('filterAccount');
+      if (fa && srcId !== 'filterAccount') fa.dispatchEvent(new Event('change'));
+      else if (typeof renderAll === 'function') renderAll();
     }
     function _wire() {
       _watchFilterAccount();
