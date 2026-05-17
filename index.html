@@ -432,6 +432,10 @@
     .widget-list-items .item-snippet.ai-summary::before { content: '🤖 '; opacity: 0.7; }
     .widgets-grid-cal { grid-template-columns: 1fr 1fr; }
     .widgets-grid-news { grid-template-columns: 1fr; }
+    #widgetNewsList li { cursor: pointer; transition: background 0.15s; position: relative; }
+    #widgetNewsList li:hover { background: rgba(99, 102, 241, 0.08); }
+    #widgetNewsList li:hover .item-main::after { opacity: 1; transform: translateX(2px); }
+    #widgetNewsList li .item-main::after { content: ' ↗'; opacity: 0.4; transition: opacity 0.15s, transform 0.15s; }
     @media (max-width: 720px) { .widgets-grid-cal { grid-template-columns: 1fr; } }
   
     .icon-btn { background: transparent; border: 1px solid var(--border, #334155); color: var(--text); padding: 6px 10px; border-radius: 6px; cursor: pointer; font-size: 14px; margin-left: 6px; transition: background 0.15s; }
