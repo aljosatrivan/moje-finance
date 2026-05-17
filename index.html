@@ -440,6 +440,8 @@
   
     .icon-btn { background: transparent; border: 1px solid var(--border, #334155); color: var(--text); padding: 6px 10px; border-radius: 6px; cursor: pointer; font-size: 14px; margin-left: 6px; transition: background 0.15s; }
     .icon-btn:hover { background: rgba(255,255,255,0.05); border-color: var(--accent, #6366f1); }
+    .icon-btn.spinning { animation: spin 1s linear; }
+    @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
     .settings-modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,0.7); display: flex; align-items: center; justify-content: center; z-index: 999; padding: 16px; }
     .settings-modal { background: var(--bg-card, #1e293b); border: 1px solid var(--border, #334155); border-radius: 14px; width: 100%; max-width: 560px; max-height: 92vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.5); }
     .settings-header { display: flex; align-items: center; justify-content: space-between; padding: 18px 22px; border-bottom: 1px solid var(--border, #334155); }
@@ -538,6 +540,7 @@
       <button class="hamburger" onclick="openSidebar()" title="Meni">☰</button>
       <div class="breadcrumb" id="breadcrumb"><span class="current">Domov</span><span class="topbar-date" id="dateDisplay"></span></div>
       <div class="topbar-actions" id="topbarActions">
+        <button class="icon-btn" id="btnRefresh" onclick="manualRefreshAll()" title="Osveži vse zdaj">🔄</button>
         <button class="icon-btn" onclick="openSettings()" title="Nastavitve">⚙️</button>
         <button class="icon-btn" onclick="lockNow()" title="Zakleni vse module">🔒 Zakleni</button>
       </div>
@@ -1475,10 +1478,14 @@ document.addEventListener('DOMContentLoaded', boot);
   async function loadHomeWidgets() {
     // Pre-fetch AI summaries (background)
     try { await _fetchAISummaries(); } catch(e){}
+    const _doMail = _shouldRefresh('mail');
+    const _doTx = _shouldRefresh('tx');
+    if (_doMail) _markRefreshed('mail');
+    if (_doTx) _markRefreshed('tx');
     // Mail
     const mailList = document.getElementById('widgetMailList');
     const mailCount = document.getElementById('widgetMailCount');
-    if (mailList) {
+    if (mailList && _doMail) {
       const res = await fetchTopUnreadEmails(5);
       const ok = res && !res.error && Array.isArray(res.emails);
       const useRes = ok ? res : window._lastMailRes;
@@ -1511,7 +1518,7 @@ document.addEventListener('DOMContentLoaded', boot);
     }
     // Transactions
     const txList = document.getElementById('widgetTxList');
-    if (txList) {
+    if (txList && _doTx) {
       const fresh = await fetchTopTransactions(5);
       const useTxs = (fresh !== null && fresh !== undefined && fresh.length > 0) ? fresh : window._lastTxs;
       if (fresh && fresh.length > 0) { window._lastTxs = fresh; _cacheSet('txs', fresh); }
@@ -1568,6 +1575,8 @@ document.addEventListener('DOMContentLoaded', boot);
     const el = document.getElementById('accountsTiles');
     const sub = document.getElementById('financeAccountsSubmenu');
     if (!el && !sub) return;
+    if (!_shouldRefresh('accounts')) return;
+    _markRefreshed('accounts');
     const fresh = await fetchFinanceAccountsAndMonth();
     const goodFresh = fresh && fresh.accounts && fresh.accounts.length > 0;
     const data = goodFresh ? fresh : window._lastAccData;
@@ -1772,6 +1781,8 @@ document.addEventListener('DOMContentLoaded', boot);
     const ul = document.getElementById('widgetForMeList');
     const cnt = document.getElementById('widgetForMeCount');
     if (!ul) return;
+    if (!_shouldRefresh('forMe')) return;
+    _markRefreshed('forMe');
     const res = await fetchPersonalEmails(5);
     const ok = res && !res.error && Array.isArray(res.emails);
     const useRes = ok ? res : window._lastForMe;
@@ -1928,6 +1939,8 @@ document.addEventListener('DOMContentLoaded', boot);
     const ul = document.getElementById('widgetNewsList');
     const cnt = document.getElementById('widgetNewsCount');
     if (!ul) return;
+    if (!_shouldRefresh('news')) return;
+    _markRefreshed('news');
     const res = await fetchNewsFiltered();
     const ok = res && !res.error && Array.isArray(res.items);
     const useRes = ok ? res : window._lastNews;
@@ -1959,6 +1972,8 @@ document.addEventListener('DOMContentLoaded', boot);
   async function loadCalendarWidget() {
     const ul = document.getElementById('widgetCalList');
     if (!ul) return;
+    if (!_shouldRefresh('calendar')) return;
+    _markRefreshed('calendar');
     const res = await fetchUpcomingEvents(5);
     const ok = res && !res.error && Array.isArray(res.events);
     const useEvents = ok ? res.events : (window._lastEvents || []);
@@ -2140,6 +2155,38 @@ document.addEventListener('DOMContentLoaded', boot);
       localStorage.setItem('dashboard_news_topics', JSON.stringify(topics));
     }
   })();
+  
+  // ===== Auto-refresh widgets =====
+  window._lastRefresh = window._lastRefresh || {};
+  window._minRefreshMs = {
+    mail: 30000,      // 30 s
+    tx: 30000,        // 30 s
+    accounts: 30000,  // 30 s
+    calendar: 120000, // 2 min
+    forMe: 300000,    // 5 min (heavy)
+    news: 60000,      // 1 min
+  };
+  function _shouldRefresh(key) {
+    const last = window._lastRefresh[key] || 0;
+    const min = window._minRefreshMs[key] || 60000;
+    return Date.now() - last >= min;
+  }
+  function _markRefreshed(key) { window._lastRefresh[key] = Date.now(); }
+  // Pulsing dot in topbar indicates auto-refresh activity
+  window.manualRefreshAll = function() {
+    window._lastRefresh = {};
+    if (typeof loadHomeWidgets === 'function') loadHomeWidgets();
+    const btn = document.getElementById('btnRefresh');
+    if (btn) {
+      btn.classList.add('spinning');
+      setTimeout(function(){ btn.classList.remove('spinning'); }, 1200);
+    }
+  };
+  // Periodic auto-refresh — every 15 sec (each widget decides internally if it's due)
+  setInterval(function() {
+    if (document.hidden) return;
+    if (typeof loadHomeWidgets === 'function') loadHomeWidgets();
+  }, 15000);
   </script>
 <div id="settingsModal" class="settings-modal-bg" style="display:none">
     <div class="settings-modal">
