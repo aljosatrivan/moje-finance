@@ -381,7 +381,20 @@
     z-index: 400; max-width: 90vw;
   }
   .toast.show { transform: translateX(-50%) translateY(0); }
-</style>
+
+    .nav-item .ext { margin-left: auto; opacity: 0.6; font-size: 14px; }
+    .nav-item:hover .ext { opacity: 1; }
+    .widgets-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; margin-bottom: 32px; }
+    .widget { display: flex; gap: 14px; padding: 18px; background: var(--bg-card, #1e293b); border: 1px solid var(--border, #334155); border-radius: 12px; cursor: pointer; transition: transform 0.15s, border-color 0.15s; }
+    .widget:hover { transform: translateY(-2px); border-color: var(--accent, #6366f1); }
+    .widget-icon { font-size: 36px; line-height: 1; }
+    .widget-body { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 0; }
+    .widget-label { font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; opacity: 0.7; }
+    .widget-value { font-size: 26px; font-weight: 700; line-height: 1.1; }
+    .widget-sub { font-size: 13px; opacity: 0.65; }
+    .card-sub { font-size: 12px; opacity: 0.6; margin-top: 4px; }
+    @media (max-width: 480px) { .widget-value { font-size: 22px; } .widget-icon { font-size: 30px; } }
+  </style>
 </head>
 <body>
 
@@ -426,6 +439,10 @@
           <div class="nav-item" data-module="finance" onclick="openModule('finance')">
             <span class="icon">💰</span><span>Finance</span>
             <span class="lock" id="lock-finance">🔒</span>
+          </div>
+          <div class="nav-item" data-module="mail" onclick="openMailExternal()">
+            <span class="icon">📧</span><span>Mail</span>
+            <span class="ext" title="Odpre v novem zavihku">↗</span>
           </div>
         </div>
       </div>
@@ -499,7 +516,7 @@
 ========================================================= */
 
 const CLIENT_ID = '540110413847-lauuop1iefm54rljscsqaqc39f1vh1ti.apps.googleusercontent.com';
-const SCOPES = 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/spreadsheets openid email profile';
+const SCOPES = 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/gmail.readonly openid email profile';
 const CONFIG_FILENAME = 'dashboard-config.json';
 const SESSION_TIMEOUT_MIN = 15;
 
@@ -981,6 +998,25 @@ function renderWelcome() {
         <div class="welcome-date" id="dateDisplay"></div>
       </div>
 
+      <div class="section-title">Hitri pregled</div>
+      <div class="widgets-grid">
+        <div class="widget" id="widgetMail" onclick="openMailExternal()">
+          <div class="widget-icon">📧</div>
+          <div class="widget-body">
+            <div class="widget-label">Neprebrani maili</div>
+            <div class="widget-value" id="widgetMailCount">—</div>
+            <div class="widget-sub" id="widgetMailSub">Klikni za Gmail</div>
+          </div>
+        </div>
+        <div class="widget" id="widgetFinance" onclick="openModule('finance')">
+          <div class="widget-icon">💰</div>
+          <div class="widget-body">
+            <div class="widget-label">Finance ta mesec (Osnovni)</div>
+            <div class="widget-value" id="widgetFinValue">—</div>
+            <div class="widget-sub" id="widgetFinSub">Prihodki vs odhodki</div>
+          </div>
+        </div>
+      </div>
       <div class="section-title">Osebno</div>
       <div class="cards-grid">
         <div class="card" onclick="openModule('finance')">
@@ -1090,6 +1126,93 @@ document.getElementById('pinPad').addEventListener('click', (e) => {
 });
 
 document.addEventListener('DOMContentLoaded', boot);
-</script>
+
+  // ===== Mail external + home widgets =====
+  function openMailExternal() {
+    window.open('https://mail.google.com/mail/u/0/', '_blank', 'noopener,noreferrer');
+  }
+  async function fetchUnreadGmailCount() {
+    try {
+      const tok = (window.state && state.token) || null;
+      if (!tok) return null;
+      const r = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/labels/INBOX', {
+        headers: { Authorization: 'Bearer ' + tok }
+      });
+      if (!r.ok) return null;
+      const j = await r.json();
+      return typeof j.threadsUnread === 'number' ? j.threadsUnread : (j.messagesUnread || 0);
+    } catch (e) { return null; }
+  }
+  async function fetchFinanceCurrentMonth() {
+    try {
+      const tok = (window.state && state.token) || null;
+      if (!tok) return null;
+      const SHEET_NAME = 'Moje finance — podatki';
+      // Locate spreadsheet via Drive
+      const q = encodeURIComponent("name='" + SHEET_NAME + "' and mimeType='application/vnd.google-apps.spreadsheet' and trashed=false");
+      const drvUrl = 'https://www.googleapis.com/drive/v3/files?q=' + q + '&fields=files(id,name)&pageSize=5';
+      const dr = await fetch(drvUrl, { headers: { Authorization: 'Bearer ' + tok } });
+      if (!dr.ok) return null;
+      const dj = await dr.json();
+      if (!dj.files || !dj.files.length) return { income: 0, expense: 0, balance: 0, empty: true };
+      const sheetId = dj.files[0].id;
+      // Read transactions A:H
+      const sr = await fetch('https://sheets.googleapis.com/v4/spreadsheets/' + sheetId + '/values/transactions!A2:H?majorDimension=ROWS', {
+        headers: { Authorization: 'Bearer ' + tok }
+      });
+      if (!sr.ok) return null;
+      const sj = await sr.json();
+      const rows = sj.values || [];
+      // Headers (col): id, date, type, category_id, amount, description, created_at, account_id
+      const now = new Date();
+      const ym = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2, '0');
+      let income = 0, expense = 0;
+      for (const row of rows) {
+        const date = row[1] || '';
+        const type = row[2] || '';
+        const amount = Number(row[4]) || 0;
+        const account_id = row[7] || '';
+        if (!date.startsWith(ym)) continue;
+        // Treat missing account_id as Osnovni (for pre-import data)
+        if (account_id && account_id !== 'acc-osnovni') continue;
+        if (type === 'income') income += amount;
+        else if (type === 'expense') expense += amount;
+      }
+      return { income, expense, balance: income - expense };
+    } catch (e) { return null; }
+  }
+  function fmtEur(n) {
+    return (n || 0).toLocaleString('sl-SI', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' €';
+  }
+  async function loadHomeWidgets() {
+    // Gmail
+    const mailEl = document.getElementById('widgetMailCount');
+    const mailSubEl = document.getElementById('widgetMailSub');
+    if (mailEl) {
+      const c = await fetchUnreadGmailCount();
+      if (c === null) { mailEl.textContent = '—'; if (mailSubEl) mailSubEl.textContent = 'Ni dostopa'; }
+      else { mailEl.textContent = String(c); if (mailSubEl) mailSubEl.textContent = (c === 0 ? 'Vse prebrano ✓' : 'V mapi Prejeto'); }
+    }
+    // Finance
+    const finVal = document.getElementById('widgetFinValue');
+    const finSub = document.getElementById('widgetFinSub');
+    if (finVal) {
+      const f = await fetchFinanceCurrentMonth();
+      if (!f) { finVal.textContent = '—'; if (finSub) finSub.textContent = 'Ni podatkov'; }
+      else if (f.empty) { finVal.textContent = '0 €'; if (finSub) finSub.textContent = 'Ni transakcij'; }
+      else {
+        finVal.textContent = fmtEur(f.balance);
+        if (finSub) finSub.textContent = '+' + fmtEur(f.income).replace(' €','') + ' / −' + fmtEur(f.expense).replace(' €','') + ' €';
+      }
+    }
+  }
+  // Wrap goHome to also load widgets
+  if (typeof window.goHome === 'function') {
+    const _ogh = window.goHome;
+    window.goHome = function() { _ogh.apply(this, arguments); setTimeout(loadHomeWidgets, 100); };
+  }
+  // Also call after auth completion
+  window.addEventListener('cowork:home-rendered', loadHomeWidgets);
+  </script>
 </body>
 </html>
