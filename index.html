@@ -880,10 +880,19 @@ function startInactivityTimer() {
   }
   // unlockModule: tries biometric first, falls back to PIN
   async function unlockModule(moduleName) {
+    // Wait for Google token if not yet ready (avoid iframe race)
+    if (!state.accessToken) {
+      try { toast('Čakam Google avtorizacijo …'); } catch(e){}
+      const start = Date.now();
+      while (!state.accessToken && Date.now() - start < 8000) await new Promise(function(r){ setTimeout(r, 200); });
+      if (!state.accessToken) {
+        try { toast('Google avtorizacija ni uspela. Poskusi znova.'); } catch(e){}
+        return { cancelled: true };
+      }
+    }
     if (_biomEnabled()) {
       const ok = await _biomAuthenticate();
-      if (ok) return {};  // success — skip PIN
-      // user cancelled or failed → fall through to PIN below
+      if (ok) return {};
     }
     return openPin(moduleName, 'enter');
   }
@@ -1270,11 +1279,7 @@ async function boot() {
 document.getElementById('btnLogin').addEventListener('click', () => {
   showScreen('loadingScreen');
   setLoading('Prijavljam...', 'Čakam Google avtorizacijo');
-  // Try silent OAuth first (mobile direct-connect); fallback to interactive after 3s
-  requestToken(false);
-  setTimeout(function(){
-    if (!state.accessToken) requestToken(true);
-  }, 3000);
+  requestToken(true);
 });
 
 // PIN pad events
