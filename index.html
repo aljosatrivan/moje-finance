@@ -404,6 +404,22 @@
     .widget-empty { color: var(--text-muted, #94a3b8); justify-content: center; padding: 30px 16px; font-size: 13px; }
     .widget-list-error { color: #f59e0b; padding: 16px; font-size: 13px; cursor: pointer; }
     .card-sub { font-size: 12px; opacity: 0.6; margin-top: 4px; }
+  
+    .accounts-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 14px; margin-bottom: 32px; }
+    .acc-tile { background: var(--bg-card, #1e293b); border: 1px solid var(--border, #334155); border-radius: 12px; padding: 16px; cursor: pointer; transition: transform 0.15s, border-color 0.15s; display: flex; flex-direction: column; gap: 8px; }
+    .acc-tile:hover { transform: translateY(-2px); border-color: var(--accent, #6366f1); }
+    .acc-tile-head { display: flex; align-items: center; gap: 10px; }
+    .acc-tile-icon { font-size: 24px; line-height: 1; }
+    .acc-tile-name { font-weight: 600; font-size: 14px; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .acc-tile-balance { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.1; }
+    .acc-tile-balance.pos { color: #22c55e; }
+    .acc-tile-balance.neg { color: #ef4444; }
+    .acc-tile-sub { font-size: 11px; opacity: 0.6; }
+    .acc-tile-empty { padding: 20px; text-align: center; opacity: 0.6; font-size: 13px; grid-column: 1 / -1; }
+    .nav-submenu { padding: 2px 0 4px 28px; display: flex; flex-direction: column; gap: 2px; }
+    .nav-submenu .nav-sub-item { display: flex; align-items: center; gap: 8px; padding: 6px 10px; font-size: 13px; color: rgba(255,255,255,0.7); cursor: pointer; border-radius: 6px; }
+    .nav-submenu .nav-sub-item:hover { background: rgba(99, 102, 241, 0.1); color: rgba(255,255,255,0.95); }
+    .nav-submenu .nav-sub-item .nav-sub-icon { font-size: 14px; }
   </style>
 </head>
 <body>
@@ -450,6 +466,7 @@
             <span class="icon">💰</span><span>Finance</span>
             <span class="lock" id="lock-finance">🔒</span>
           </div>
+          <div class="nav-submenu" id="financeAccountsSubmenu"></div>
           <div class="nav-item" data-module="mail" onclick="openMailExternal()">
             <span class="icon">📧</span><span>Mail</span>
             <span class="ext" title="Odpre v novem zavihku">↗</span>
@@ -906,7 +923,7 @@ document.addEventListener('keydown', (e) => {
 
 /* ===================== MODULES ===================== */
 
-async function openModule(name) {
+async function openModule(name, account) {
   const mod = MODULES[name];
   if (!mod) return;
 
@@ -921,7 +938,7 @@ async function openModule(name) {
       if (!r || r.cancelled) return;
     }
   }
-  loadModuleIframe(name);
+  window._pendingAccount = account || null; loadModuleIframe(name);
 }
 
 function loadModuleIframe(name) {
@@ -940,7 +957,7 @@ function loadModuleIframe(name) {
     el.classList.toggle('active', el.dataset.module === name);
   });
   document.getElementById('contentArea').innerHTML =
-    `<iframe class="content-iframe" id="moduleIframe" src="${mod.url}?from=dashboard" title="${mod.title}"></iframe>`;
+    `<iframe class="content-iframe" id="moduleIframe" src="${mod.url}?from=dashboard${window._pendingAccount ? '&account=' + encodeURIComponent(window._pendingAccount) : ''}" title="${mod.title}"></iframe>`;
   // Pass token after iframe loads
   const iframe = document.getElementById('moduleIframe');
   iframe.addEventListener('load', () => {
@@ -1030,6 +1047,8 @@ function renderWelcome() {
           </ul>
         </div>
       </div>
+      <div class="section-title">Računi</div>
+      <div class="accounts-tiles" id="accountsTiles"><div class="acc-tile-empty">Nalaganje…</div></div>
       <div class="section-title">Osebno</div>
       <div class="cards-grid">
         <div class="card" onclick="openModule('finance')">
@@ -1276,6 +1295,100 @@ document.addEventListener('DOMContentLoaded', boot);
       }
     }
   }
+  // ===== Per-account tiles + sidebar submenu =====
+  async function fetchFinanceAccountsAndMonth() {
+    try {
+      const tok = (window.state && state.accessToken) || null;
+      if (!tok) return null;
+      const SHEET_NAME = 'Moje finance — podatki';
+      const q = encodeURIComponent("name='" + SHEET_NAME + "' and mimeType='application/vnd.google-apps.spreadsheet' and trashed=false");
+      const dr = await fetch('https://www.googleapis.com/drive/v3/files?q=' + q + '&fields=files(id,name)&pageSize=5', { headers: { Authorization: 'Bearer ' + tok } });
+      if (!dr.ok) return null;
+      const dj = await dr.json();
+      if (!dj.files || !dj.files.length) return { accounts: [], txs: [] };
+      const sheetId = dj.files[0].id;
+      const accReq = fetch('https://sheets.googleapis.com/v4/spreadsheets/' + sheetId + '/values/accounts!A2:F?majorDimension=ROWS', { headers: { Authorization: 'Bearer ' + tok } });
+      const txReq = fetch('https://sheets.googleapis.com/v4/spreadsheets/' + sheetId + '/values/transactions!A2:H?majorDimension=ROWS', { headers: { Authorization: 'Bearer ' + tok } });
+      const [accR, txR] = await Promise.all([accReq, txReq]);
+      let accounts = [];
+      if (accR.ok) {
+        const accJ = await accR.json();
+        accounts = (accJ.values || []).map(function(row){
+          return { id: row[0], name: row[1], type: row[2], color: row[3], icon: row[4], show_on_dashboard: (row[5] !== 'false') };
+        }).filter(function(a){ return a.id; });
+      }
+      let txs = [];
+      if (txR.ok) {
+        const txJ = await txR.json();
+        txs = (txJ.values || []).map(function(row){
+          return { id: row[0], date: row[1] || '', type: row[2] || '', category_id: row[3] || '', amount: Number(row[4]) || 0, description: row[5] || '', created_at: row[6] || '', account_id: row[7] || '' };
+        });
+      }
+      return { accounts: accounts, txs: txs };
+    } catch (e) { return null; }
+  }
+  async function loadAccountsTiles() {
+    const el = document.getElementById('accountsTiles');
+    const sub = document.getElementById('financeAccountsSubmenu');
+    if (!el && !sub) return;
+    const data = await fetchFinanceAccountsAndMonth();
+    if (!data) {
+      if (el) el.innerHTML = '<div class="acc-tile-empty">Napaka pri branju računov</div>';
+      return;
+    }
+    const accounts = data.accounts;
+    const txs = data.txs;
+    // Compute current month per account
+    const now = new Date();
+    const ym = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2, '0');
+    const sums = {};
+    for (const t of txs) {
+      if (!t.date || !t.date.startsWith(ym)) continue;
+      const aid = t.account_id || 'acc-osnovni';
+      if (!sums[aid]) sums[aid] = { income: 0, expense: 0 };
+      if (t.type === 'income') sums[aid].income += t.amount;
+      else if (t.type === 'expense') sums[aid].expense += t.amount;
+    }
+    function fmt(n){ return (n||0).toLocaleString('sl-SI', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' €'; }
+    function esc(s){ const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
+    // Tiles — only show_on_dashboard
+    if (el) {
+      const visible = accounts.filter(function(a){ return a.show_on_dashboard !== false; });
+      if (!visible.length) {
+        el.innerHTML = '<div class="acc-tile-empty">Ni izbranih računov. Označi v Financah → Nastavitve → Računi.</div>';
+      } else {
+        el.innerHTML = visible.map(function(a){
+          const s = sums[a.id] || { income: 0, expense: 0 };
+          const bal = s.income - s.expense;
+          const cls = bal >= 0 ? 'pos' : 'neg';
+          const sign = bal >= 0 ? '+' : '−';
+          return '<div class="acc-tile" onclick="openModule(\'finance\', \'' + a.id + '\')">' +
+            '<div class="acc-tile-head"><span class="acc-tile-icon">' + (a.icon || '🏦') + '</span><span class="acc-tile-name">' + esc(a.name) + '</span></div>' +
+            '<div class="acc-tile-balance ' + cls + '">' + sign + fmt(Math.abs(bal)) + '</div>' +
+            '<div class="acc-tile-sub">+' + fmt(s.income) + ' / −' + fmt(s.expense) + '</div>' +
+            '</div>';
+        }).join('');
+      }
+    }
+    // Sidebar submenu — show ALL accounts
+    if (sub) {
+      if (!accounts.length) {
+        sub.innerHTML = '';
+      } else {
+        sub.innerHTML = accounts.map(function(a){
+          return '<div class="nav-sub-item" onclick="event.stopPropagation(); openModule(\'finance\', \'' + a.id + '\')"><span class="nav-sub-icon">' + (a.icon || '🏦') + '</span><span>' + esc(a.name) + '</span></div>';
+        }).join('');
+      }
+    }
+  }
+  // Wrap loadHomeWidgets to also load tiles
+  if (typeof window.loadHomeWidgets === 'function') {
+    const _olhw = window.loadHomeWidgets;
+    window.loadHomeWidgets = function() { _olhw.apply(this, arguments); loadAccountsTiles(); };
+  } else {
+    window.loadHomeWidgets = loadAccountsTiles;
+  }
+  
   // Wrap goHome to also load widgets
   if (typeof window.goHome === 'function') {
     const _ogh = window.goHome;
