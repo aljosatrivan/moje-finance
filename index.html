@@ -1876,14 +1876,24 @@ document.addEventListener('DOMContentLoaded', boot);
       const itemsForFilter = recent.length > 0 ? recent : allItems;
       // Key for dedupe: normalized title (same article appears with different URLs across feeds)
       function _dedupeKey(n){ return _normalizeText((n.title || '').replace(/\s+/g, ' ').trim()); }
-      // Build regex patterns: match topic at WORD START (any suffix OK)
-      const _topicPatterns = topics.map(function(t){
-        const n = _normalizeText(t).trim();
-        if (!n) return null;
-        try { return new RegExp('\\b' + n.replace(/[.*+?^${}()|[\]\\]/g, '\\      function _match(arr){
-        return arr.filter(function(n){
-          const hay = _normalizeText(n.title + ' ' + n.desc);
-          return topics.some(function(t){ return hay.includes(_normalizeText(t)); });
+      // Build word-start matcher (avoids regex escaping issues)
+      function _topicMatches(text) {
+        const norm = _normalizeText(text || '');
+        for (let i = 0; i < topics.length; i++) {
+          const tn = _normalizeText(topics[i] || '').trim();
+          if (!tn) continue;
+          let idx = 0;
+          while ((idx = norm.indexOf(tn, idx)) !== -1) {
+            const before = idx === 0 ? '' : norm.charAt(idx - 1);
+            if (!before || !/[a-z0-9]/.test(before)) return true;
+            idx++;
+          }
+        }
+        return false;
+      }
+      function _match(arr){
+        return arr.filter(function(n){ return _topicMatches(n.title + ' ' + n.desc); });
+      });
         });
       }'), 'i'); }
         catch(e) { return null; }
