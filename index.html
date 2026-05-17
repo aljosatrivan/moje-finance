@@ -1041,28 +1041,6 @@ function renderWelcome() {
             <li class="widget-empty">Nalaganje…</li>
           </ul>
         </div>
-        <div class="widget widget-list" id="widgetFinance">
-          <div class="widget-list-header" onclick="openModule('finance')">
-            <span class="widget-icon">💰</span>
-            <span class="widget-title">Zadnje transakcije (Osnovni)</span>
-          </div>
-          <ul class="widget-list-items" id="widgetTxList">
-            <li class="widget-empty">Nalaganje…</li>
-          </ul>
-        </div>
-      </div>
-      <div class="section-title">Računi</div>
-      <div class="accounts-tiles" id="accountsTiles"><div class="acc-tile-empty">Nalaganje…</div></div>
-      <div class="widgets-grid widgets-grid-cal">
-        <div class="widget widget-list" id="widgetCalendar">
-          <div class="widget-list-header" onclick="openCalendarExternal()">
-            <span class="widget-icon">📅</span>
-            <span class="widget-title">Naslednji dogodki</span>
-          </div>
-          <ul class="widget-list-items" id="widgetCalList">
-            <li class="widget-empty">Nalaganje…</li>
-          </ul>
-        </div>
         <div class="widget widget-list" id="widgetForMe">
           <div class="widget-list-header" onclick="openMailExternal()">
             <span class="widget-icon">📌</span>
@@ -1074,6 +1052,29 @@ function renderWelcome() {
           </ul>
         </div>
       </div>
+      <div class="widgets-grid">
+        <div class="widget widget-list" id="widgetFinance">
+          <div class="widget-list-header" onclick="openModule('finance')">
+            <span class="widget-icon">💰</span>
+            <span class="widget-title">Zadnje transakcije (Osnovni)</span>
+          </div>
+          <ul class="widget-list-items" id="widgetTxList">
+            <li class="widget-empty">Nalaganje…</li>
+          </ul>
+        </div>
+        <div class="widget widget-list" id="widgetCalendar">
+          <div class="widget-list-header" onclick="openCalendarExternal()">
+            <span class="widget-icon">📅</span>
+            <span class="widget-title">Naslednji dogodki</span>
+          </div>
+          <ul class="widget-list-items" id="widgetCalList">
+            <li class="widget-empty">Nalaganje…</li>
+          </ul>
+        </div>
+      </div>
+      <div class="section-title">Računi</div>
+      <div class="accounts-tiles" id="accountsTiles"><div class="acc-tile-empty">Nalaganje…</div></div>
+      
       <div class="section-title">Službeno (Bilumina)</div>
       <div class="cards-grid">
         <div class="card disabled">
