@@ -1876,11 +1876,24 @@ document.addEventListener('DOMContentLoaded', boot);
       const itemsForFilter = recent.length > 0 ? recent : allItems;
       // Key for dedupe: normalized title (same article appears with different URLs across feeds)
       function _dedupeKey(n){ return _normalizeText((n.title || '').replace(/\s+/g, ' ').trim()); }
-      function _match(arr){
+      // Build regex patterns: match topic at WORD START (any suffix OK)
+      const _topicPatterns = topics.map(function(t){
+        const n = _normalizeText(t).trim();
+        if (!n) return null;
+        try { return new RegExp('\\b' + n.replace(/[.*+?^${}()|[\]\\]/g, '\\      function _match(arr){
         return arr.filter(function(n){
           const hay = _normalizeText(n.title + ' ' + n.desc);
           return topics.some(function(t){ return hay.includes(_normalizeText(t)); });
         });
+      }'), 'i'); }
+        catch(e) { return null; }
+      }).filter(Boolean);
+      function _topicMatches(text) {
+        const norm = _normalizeText(text || '');
+        return _topicPatterns.some(function(re){ return re.test(norm); });
+      }
+      function _match(arr){
+        return arr.filter(function(n){ return _topicMatches(n.title + ' ' + n.desc); });
       }
       // Fetch full article body (cached in window._articleBodyCache) and check if any topic appears in body
       window._articleBodyCache = window._articleBodyCache || {};
@@ -1889,7 +1902,7 @@ document.addEventListener('DOMContentLoaded', boot);
         if (window._articleBodyCache[item.link] !== undefined) {
           const cached = window._articleBodyCache[item.link];
           if (cached === null) return false;
-          return topics.some(function(t){ return cached.includes(_normalizeText(t)); });
+          return _topicMatches(cached);
         }
         try {
           const r = await fetch('https://corsproxy.io/?url=' + encodeURIComponent(item.link));
@@ -1900,7 +1913,7 @@ document.addEventListener('DOMContentLoaded', boot);
           const text = (el && el.textContent) ? el.textContent : '';
           const norm = _normalizeText(text.substring(0, 600));
           window._articleBodyCache[item.link] = norm;
-          return topics.some(function(t){ return norm.includes(_normalizeText(t)); });
+          return _topicMatches(norm);
         } catch(e) { window._articleBodyCache[item.link] = null; return false; }
       }
       const __numNews = (function(){ try { const s = JSON.parse(localStorage.getItem('dashboard_settings') || '{}'); const n = Number(s.newsCount); return (isFinite(n) && n >= 1 && n <= 30) ? n : 10; } catch(e){ return 10; } })();
