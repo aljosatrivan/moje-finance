@@ -266,6 +266,10 @@
       .account-summary .acc-income, .account-summary .acc-expense { grid-column: 1; }
       .account-summary .acc-balance { grid-row: 1 / 3; grid-column: 2; align-self: center; }
     }
+  
+    .form-check { padding: 4px 0; }
+    .form-check .check-row { display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 14px; }
+    .form-check input[type="checkbox"] { width: 18px; height: 18px; cursor: pointer; }
   </style>
 </head>
 <body>
@@ -610,11 +614,11 @@ window.addEventListener('message', (e) => {
 const SHEET_NAMES = { tx: 'transactions', cats: 'categories', meta: 'meta', accs: 'accounts' };
 const TX_HEADERS = ['id', 'date', 'type', 'category_id', 'amount', 'description', 'created_at', 'account_id'];
 const CAT_HEADERS = ['id', 'name', 'type', 'color', 'icon'];
-const ACCOUNT_HEADERS = ['id', 'name', 'type', 'color', 'icon'];
+const ACCOUNT_HEADERS = ['id', 'name', 'type', 'color', 'icon', 'show_on_dashboard'];
 const META_HEADERS = ['key', 'value'];
 
 const DEFAULT_ACCOUNTS = [
-  { id: 'acc-osnovni', name: 'Osnovni', type: 'bank', color: '#6366f1', icon: '🏦' },
+  { id: 'acc-osnovni', name: 'Osnovni', type: 'bank', color: '#6366f1', icon: '🏦', show_on_dashboard: true },
   { id: 'acc-hase',    name: 'Hase',    type: 'business', color: '#f59e0b', icon: '💼' },
 ];
 
@@ -1372,7 +1376,7 @@ function openAccountModal(id) {
     document.getElementById('accId').value = a.id;
     document.getElementById('accName').value = a.name;
     document.getElementById('accType').value = a.type || 'bank';
-    document.getElementById('accIcon').value = a.icon || '';
+    document.getElementById('accIcon').value = a.icon || ''; const _csd = document.getElementById('accShowDash'); if (_csd) _csd.checked = (a.show_on_dashboard !== false);
     document.getElementById('accColor').value = a.color || '#6366f1';
     document.getElementById('btnDeleteAcc').style.display = 'block';
   } else {
@@ -1680,7 +1684,7 @@ function wireEvents() {
     const payload = {
       name: document.getElementById('accName').value.trim(),
       type: document.getElementById('accType').value,
-      icon: document.getElementById('accIcon').value.trim(),
+      icon: document.getElementById('accIcon').value, show_on_dashboard: !!(document.getElementById('accShowDash') && document.getElementById('accShowDash').checked).trim(),
       color: document.getElementById('accColor').value,
     };
     if (id) { DataStore.updateAccount(id, payload); toast('Račun posodobljen'); }
@@ -1935,6 +1939,28 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', _wire);
     else _wire();
+    // URL ?account= filter
+    (function(){
+      try {
+        const sp = new URLSearchParams(window.location.search);
+        const accP = sp.get('account');
+        if (!accP) return;
+        const tryset = function() {
+          const fa = document.getElementById('filterAccount');
+          if (!fa) return false;
+          if (Array.from(fa.options).some(function(o){ return o.value === accP; })) {
+            if (fa.value !== accP) { fa.value = accP; fa.dispatchEvent(new Event('change')); }
+            return true;
+          }
+          return false;
+        };
+        if (tryset()) return;
+        const mo2 = new MutationObserver(function(){ if (tryset()) mo2.disconnect(); });
+        const target = document.getElementById('filterAccount');
+        if (target) mo2.observe(target, { childList: true });
+        setTimeout(function(){ tryset(); mo2.disconnect && mo2.disconnect(); }, 5000);
+      } catch(e) { console.warn('account url param err', e); }
+    })();
     // Re-wire after each renderAll (in case DOM is rebuilt)
     if (typeof window.renderAll === 'function') {
       const _origRA = window.renderAll;
