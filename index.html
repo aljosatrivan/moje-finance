@@ -428,7 +428,8 @@
     .mail-badge-direct { background: #22c55e; color: #052e16; }
     .mail-badge-cc { background: #475569; color: #e2e8f0; }
     .widget-list-items .item-snippet { font-size: 12px; opacity: 0.5; margin-top: 4px; line-height: 1.35; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-    .widgets-grid-cal { grid-template-columns: 1fr; }
+    .widgets-grid-cal { grid-template-columns: 1fr 1fr; }
+    @media (max-width: 720px) { .widgets-grid-cal { grid-template-columns: 1fr; } }
   </style>
 </head>
 <body>
@@ -1060,6 +1061,16 @@ function renderWelcome() {
             <li class="widget-empty">Nalaganje…</li>
           </ul>
         </div>
+        <div class="widget widget-list" id="widgetForMe">
+          <div class="widget-list-header" onclick="openMailExternal()">
+            <span class="widget-icon">📌</span>
+            <span class="widget-title">Zame — pomembni maili</span>
+            <span class="widget-count" id="widgetForMeCount">—</span>
+          </div>
+          <ul class="widget-list-items" id="widgetForMeList">
+            <li class="widget-empty">Nalaganje…</li>
+          </ul>
+        </div>
       </div>
       <div class="section-title">Računi</div>
       <div class="accounts-tiles" id="accountsTiles"><div class="acc-tile-empty">Nalaganje…</div></div>
@@ -1168,7 +1179,7 @@ document.addEventListener('DOMContentLoaded', boot);
     window.open('https://mail.google.com/mail/u/0/', '_blank', 'noopener,noreferrer');
   }
   async function fetchTopUnreadEmails(n) {
-    n = (n || 5) * 3;  // overfetch so we have enough after "to me" filter
+    n = n || 5;
     try {
       const tok = (typeof state !== 'undefined' && state.accessToken) || null;
       if (!tok) return { error: 'no-token' };
@@ -1216,12 +1227,7 @@ document.addEventListener('DOMContentLoaded', boot);
           onlyCcMe: onlyCcMe,
         };
       }));
-      const valid = emails.filter(function(e){ return e; });
-      const direct = valid.filter(function(e){ return e.directToMe; });
-      // Pick direct first, fill remainder with non-direct if needed
-      const top = direct.slice(0, 5);
-      if (top.length < 5) for (const e of valid) { if (top.length >= 5) break; if (!top.includes(e)) top.push(e); }
-      return { emails: top, totalUnread: totalUnread, directCount: direct.length };
+      return { emails: emails.filter(function(e){ return e; }), totalUnread: totalUnread };
     } catch (e) { return { error: 'js-' + e.message }; }
   }
   async function fetchTopTransactions(n) {
@@ -1302,8 +1308,7 @@ document.addEventListener('DOMContentLoaded', boot);
             const from = esc((e.from || '').replace(/<.*>$/, '').replace(/"/g, '').trim());
             const dt = fmtDateShort(e.internalDate);
             const snip = esc(e.snippet || '');
-            const badge = e.directToMe ? '<span class="mail-badge mail-badge-direct" title="Direktno tebi">TI</span>' : (e.onlyCcMe ? '<span class="mail-badge mail-badge-cc" title="V kopiji">CC</span>' : '');
-            return '<li><div class="item-main">' + badge + subj + '<div class="item-sub">' + from + '</div>' + (snip ? '<div class="item-snippet">' + snip + '</div>' : '') + '</div><span class="item-date">' + dt + '</span></li>';
+            return '<li><div class="item-main">' + subj + '<div class="item-sub">' + from + '</div>' + (snip ? '<div class="item-snippet">' + snip + '</div>' : '') + '</div><span class="item-date">' + dt + '</span></li>';
           }).join('');
         }
       } else {
@@ -1474,6 +1479,131 @@ document.addEventListener('DOMContentLoaded', boot);
     } catch (e) { return ''; }
   }
   window._lastEvents = (typeof window._lastEvents !== 'undefined') ? window._lastEvents : _cacheGet('cal');
+  async function fetchPersonalEmails(n) {
+    n = n || 5;
+    try {
+      const tok = (typeof state !== 'undefined' && state.accessToken) || null;
+      if (!tok) return { error: 'no-token' };
+      // Names to match (Slovenian declensions + surname)
+      const MY_NAMES = ['Aljoša', 'Aljoše', 'Aljoši', 'Aljošo', 'Aljošu', 'Trivan'];
+      function normalize(s){ return (s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, ''); }
+      function mentionsMe(text){
+        const n0 = normalize(text);
+        return MY_NAMES.some(function(name){ return n0.includes(normalize(name)); });
+      }
+      function decodeB64Url(s){
+        try {
+          const std = (s || '').replace(/-/g, '+').replace(/_/g, '/');
+          return decodeURIComponent(escape(atob(std)));
+        } catch(e){ return ''; }
+      }
+      function extractText(payload, depth) {
+        if (!payload || (depth || 0) > 5) return '';
+        if (payload.body && payload.body.data && (payload.mimeType || '').startsWith('text/plain')) return decodeB64Url(payload.body.data);
+        if (payload.parts) {
+          for (const p of payload.parts) {
+            if ((p.mimeType || '').startsWith('text/plain') && p.body && p.body.data) return decodeB64Url(p.body.data);
+          }
+          for (const p of payload.parts) {
+            const t = extractText(p, (depth || 0) + 1);
+            if (t) return t;
+          }
+          for (const p of payload.parts) {
+            if ((p.mimeType || '').startsWith('text/html') && p.body && p.body.data) {
+              return decodeB64Url(p.body.data).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+            }
+          }
+        }
+        return '';
+      }
+      function countEmails(headerVal) {
+        if (!headerVal) return 0;
+        return headerVal.split(',').map(function(s){ return s.trim(); }).filter(function(s){ return s.length > 0; }).length;
+      }
+      // Get a larger pool of unread inbox messages
+      const POOL = 30;
+      const r1 = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages?q=is:unread+in:inbox&maxResults=' + POOL, {
+        headers: { Authorization: 'Bearer ' + tok }
+      });
+      if (r1.status === 401 || r1.status === 403) return { error: 'no-scope' };
+      if (!r1.ok) return { error: 'http-' + r1.status };
+      const j1 = await r1.json();
+      if (!j1.messages || !j1.messages.length) return { emails: [] };
+      const myEmail = (state.email || '').toLowerCase();
+      // Fetch each with full body
+      const allMsgs = await Promise.all(j1.messages.map(async function(m){
+        try {
+          const r2 = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/' + m.id + '?format=full', {
+            headers: { Authorization: 'Bearer ' + tok }
+          });
+          if (!r2.ok) return null;
+          const j2 = await r2.json();
+          const hdrs = (j2.payload && j2.payload.headers) || [];
+          function getH(name){ const f = hdrs.find(function(h){ return h.name.toLowerCase() === name.toLowerCase(); }); return f ? f.value : ''; }
+          const toRaw = getH('To');
+          const ccRaw = getH('Cc');
+          const subject = getH('Subject');
+          const from = getH('From');
+          const toCount = countEmails(toRaw);
+          const ccCount = countEmails(ccRaw);
+          const toLow = toRaw.toLowerCase();
+          const ccLow = ccRaw.toLowerCase();
+          const meInTo = myEmail && toLow.includes(myEmail);
+          const meInCc = myEmail && ccLow.includes(myEmail);
+          // Sole recipient: only me in To, no CC (or only me in CC)
+          const soleRecipient = meInTo && toCount === 1 && (ccCount === 0 || (ccCount === 1 && meInCc));
+          // Body text (limit search for perf)
+          let bodyText = '';
+          if (!soleRecipient) bodyText = (extractText(j2.payload) || '').substring(0, 4000);
+          const haystack = subject + ' ' + bodyText;
+          const explicitMention = !soleRecipient && mentionsMe(haystack);
+          return {
+            id: m.id,
+            subject: subject || '(brez naslova)',
+            from: from,
+            date: getH('Date'),
+            internalDate: j2.internalDate ? new Date(parseInt(j2.internalDate, 10)) : null,
+            snippet: (j2.snippet || '').replace(/\s+/g, ' ').substring(0, 140),
+            soleRecipient: soleRecipient,
+            explicitMention: explicitMention,
+            isForMe: soleRecipient || explicitMention,
+          };
+        } catch(e){ return null; }
+      }));
+      const forMe = allMsgs.filter(function(m){ return m && m.isForMe; });
+      // Sort by date desc
+      forMe.sort(function(a,b){ return (b.internalDate ? b.internalDate.getTime() : 0) - (a.internalDate ? a.internalDate.getTime() : 0); });
+      return { emails: forMe.slice(0, n), totalForMe: forMe.length };
+    } catch(e){ return { error: 'js-' + e.message }; }
+  }
+  window._lastForMe = (typeof window._lastForMe !== 'undefined') ? window._lastForMe : _cacheGet('formMe');
+  async function loadPersonalMails() {
+    const ul = document.getElementById('widgetForMeList');
+    const cnt = document.getElementById('widgetForMeCount');
+    if (!ul) return;
+    const res = await fetchPersonalEmails(5);
+    const ok = res && !res.error && Array.isArray(res.emails);
+    const useRes = ok ? res : window._lastForMe;
+    if (ok && res.emails.length > 0) { window._lastForMe = res; _cacheSet('forMe', res); }
+    if (useRes && !useRes.error) {
+      if (cnt) cnt.textContent = String(useRes.totalForMe || useRes.emails.length || 0);
+      if (!useRes.emails.length) { ul.innerHTML = '<li class="widget-empty">Trenutno nič posebej zate ✓</li>'; }
+      else {
+        ul.innerHTML = useRes.emails.map(function(e){
+          const subj = esc(e.subject);
+          const from = esc((e.from || '').replace(/<.*>$/, '').replace(/"/g, '').trim());
+          const dt = fmtDateShort(e.internalDate);
+          const snip = esc(e.snippet || '');
+          const tag = e.soleRecipient ? '<span class="mail-badge mail-badge-direct" title="Samo zate">SOLO</span>' : '<span class="mail-badge mail-badge-cc" title="Eksplicitno omenjeno tvoje ime">@ TI</span>';
+          return '<li><div class="item-main">' + tag + subj + '<div class="item-sub">' + from + '</div>' + (snip ? '<div class="item-snippet">' + snip + '</div>' : '') + '</div><span class="item-date">' + dt + '</span></li>';
+        }).join('');
+      }
+    } else {
+      if (cnt) cnt.textContent = '?';
+      if (res && res.error === 'no-scope') ul.innerHTML = '<li class="widget-list-error">Odjavi se in prijavi za Gmail dovoljenje.</li>';
+      else ul.innerHTML = '<li class="widget-list-error">Napaka: ' + esc((res && res.error) || 'neznana') + '</li>';
+    }
+  }
   async function loadCalendarWidget() {
     const ul = document.getElementById('widgetCalList');
     if (!ul) return;
@@ -1501,7 +1631,7 @@ document.addEventListener('DOMContentLoaded', boot);
   // Wrap loadHomeWidgets to also load tiles
   if (typeof window.loadHomeWidgets === 'function') {
     const _olhw = window.loadHomeWidgets;
-    window.loadHomeWidgets = function() { _olhw.apply(this, arguments); loadAccountsTiles(); loadCalendarWidget(); };
+    window.loadHomeWidgets = function() { _olhw.apply(this, arguments); loadAccountsTiles(); loadCalendarWidget(); loadPersonalMails(); };
   } else {
     window.loadHomeWidgets = function() { loadAccountsTiles(); loadCalendarWidget(); };
   }
