@@ -2040,11 +2040,21 @@ document.addEventListener('DOMContentLoaded', boot);
         localStorage.removeItem('dashboard_biom_credId');
       }
     }
-    // Persist news topics as JSON list for the news fetcher
+    // Persist news topics
     const topics = s.newsTopics.split(',').map(function(t){ return t.trim(); }).filter(function(t){ return t.length > 0; });
+    const oldTopics = localStorage.getItem('dashboard_news_topics') || '';
     localStorage.setItem('dashboard_news_topics', JSON.stringify(topics));
     closeSettings();
     applySettingsVisibility();
+    // If news topics changed, invalidate cache + show loading
+    if (oldTopics !== JSON.stringify(topics)) {
+      window._lastNews = null;
+      try { localStorage.removeItem('dashboard_cache_news'); } catch(e){}
+      const newsUl = document.getElementById('widgetNewsList');
+      if (newsUl) newsUl.innerHTML = '<li class="widget-empty">🔄 Osvežujem novice za nove topike …</li>';
+      const cnt = document.getElementById('widgetNewsCount');
+      if (cnt) cnt.textContent = '…';
+    }
     if (typeof loadHomeWidgets === 'function') loadHomeWidgets();
   };
   function applySettingsVisibility() {
