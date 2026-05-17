@@ -251,6 +251,11 @@
     .view-toolbar select:hover { opacity: 1; border-color: var(--accent, #6366f1); }
     .view-toolbar select:focus { outline: none; opacity: 1; border-color: var(--accent, #6366f1); }
     @media (max-width: 480px) { .view-toolbar select { font-size: 12px; min-width: 110px; } }
+    .view-toolbar select option { background: #0f172a; color: #e2e8f0; padding: 6px; }
+    @media (min-width: 700px) {
+      #view-overview, #view-statistics { position: relative; }
+      #view-overview .view-toolbar, #view-statistics .view-toolbar { position: absolute; top: 6px; right: 16px; padding: 0; z-index: 5; }
+    }
     .cat-bar-item { cursor: pointer; user-select: none; transition: opacity 0.15s; }
     .cat-bar-item.cat-disabled { opacity: 0.35; }
     .cat-bar-item.cat-disabled .cat-bar-fill { background: var(--border, #555) !important; }
@@ -1909,6 +1914,10 @@ document.addEventListener('DOMContentLoaded', () => {
       src._valueWatched = true;
       src.addEventListener('change', function(){
         _populateMirrors();
+        // Force re-render of all views (renderAll alone may not refresh Chart.js instances)
+        try { if (typeof renderOverview === 'function') renderOverview(); } catch(e){}
+        try { if (typeof renderStatistics === 'function') renderStatistics(); } catch(e){}
+        try { if (typeof renderTransactions === 'function') renderTransactions(); } catch(e){}
         if (typeof renderAll === 'function') renderAll();
       });
     }
