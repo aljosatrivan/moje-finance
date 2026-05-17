@@ -343,6 +343,9 @@
         <option value="income">Prihodki</option>
         <option value="expense">Odhodki</option>
       </select>
+      <select id="filterAccount">
+        <option value="all">Vsi računi</option>
+      </select>
       <select id="filterCategory">
         <option value="all">Vse kategorije</option>
       </select>
@@ -403,6 +406,12 @@
     </div>
 
     <div class="card">
+      <h2>Računi</h2>
+      <button class="btn btn-secondary btn-full" id="btnAddAccount" style="margin-bottom: 12px;">+ Nov račun</button>
+      <ul id="accList" class="cat-list"></ul>
+    </div>
+
+    <div class="card">
       <h2>Kategorije</h2>
       <button class="btn btn-secondary btn-full" id="btnAddCategory" style="margin-bottom: 12px;">+ Nova kategorija</button>
       <ul id="catList" class="cat-list"></ul>
@@ -430,6 +439,10 @@
       <div class="form-group">
         <label for="txAmount">Znesek (€)</label>
         <input type="number" id="txAmount" step="0.01" min="0" required inputmode="decimal" placeholder="0,00">
+      </div>
+      <div class="form-group">
+        <label for="txAccount">Račun</label>
+        <select id="txAccount" required></select>
       </div>
       <div class="form-group">
         <label for="txCategory">Kategorija</label>
@@ -486,6 +499,44 @@
   </div>
 </div>
 
+<!-- MODAL: račun -->
+<div class="modal-bg" id="modalAcc">
+  <div class="modal">
+    <h3 id="modalAccTitle">Nov račun</h3>
+    <form id="accForm">
+      <input type="hidden" id="accId">
+      <div class="form-group">
+        <label for="accName">Ime</label>
+        <input type="text" id="accName" required maxlength="40">
+      </div>
+      <div class="form-group">
+        <label for="accType">Tip</label>
+        <select id="accType" required>
+          <option value="bank">Bančni račun (TRR)</option>
+          <option value="business">Podjetniški</option>
+          <option value="savings">Hranilnica</option>
+          <option value="cash">Gotovina</option>
+          <option value="card">Kreditna kartica</option>
+          <option value="other">Drugo</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label for="accIcon">Ikona (emoji)</label>
+        <input type="text" id="accIcon" maxlength="4" placeholder="npr. 🏦">
+      </div>
+      <div class="form-group">
+        <label for="accColor">Barva</label>
+        <input type="color" id="accColor" value="#6366f1">
+      </div>
+      <div class="btn-row" style="margin-top: 16px;">
+        <button type="submit" class="btn" style="flex:1">Shrani</button>
+        <button type="button" class="btn btn-secondary" id="btnCancelAcc">Prekliči</button>
+      </div>
+      <button type="button" class="btn btn-danger btn-full" id="btnDeleteAcc" style="display:none; margin-top:8px;">Izbriši</button>
+    </form>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script>
@@ -520,10 +571,16 @@ window.addEventListener('message', (e) => {
   }
 });
 
-const SHEET_NAMES = { tx: 'transactions', cats: 'categories', meta: 'meta' };
-const TX_HEADERS = ['id', 'date', 'type', 'category_id', 'amount', 'description', 'created_at'];
+const SHEET_NAMES = { tx: 'transactions', cats: 'categories', meta: 'meta', accs: 'accounts' };
+const TX_HEADERS = ['id', 'date', 'type', 'category_id', 'amount', 'description', 'created_at', 'account_id'];
 const CAT_HEADERS = ['id', 'name', 'type', 'color', 'icon'];
+const ACCOUNT_HEADERS = ['id', 'name', 'type', 'color', 'icon'];
 const META_HEADERS = ['key', 'value'];
+
+const DEFAULT_ACCOUNTS = [
+  { id: 'acc-osnovni', name: 'Osnovni', type: 'bank', color: '#6366f1', icon: '🏦' },
+  { id: 'acc-hase',    name: 'Hase',    type: 'business', color: '#f59e0b', icon: '💼' },
+];
 
 const DEFAULT_CATEGORIES = [
   { id: 'inc-salary',   name: 'Plača',       type: 'income',  color: '#22c55e', icon: '💼' },
@@ -661,17 +718,24 @@ const SheetsAPI = {
           { properties: { title: SHEET_NAMES.tx } },
           { properties: { title: SHEET_NAMES.cats } },
           { properties: { title: SHEET_NAMES.meta } },
+          { properties: { title: SHEET_NAMES.accs } },
         ],
       }),
     });
     // Add header rows
     await this.writeValues(r.spreadsheetId, SHEET_NAMES.tx + '!A1', [TX_HEADERS]);
     await this.writeValues(r.spreadsheetId, SHEET_NAMES.cats + '!A1', [CAT_HEADERS]);
-    await this.writeValues(r.spreadsheetId, SHEET_NAMES.meta + '!A1', [META_HEADERS, ['version', '1'], ['created_at', new Date().toISOString()]]);
+    await this.writeValues(r.spreadsheetId, SHEET_NAMES.meta + '!A1', [META_HEADERS, ['version', '2'], ['created_at', new Date().toISOString()]]);
+    await this.writeValues(r.spreadsheetId, SHEET_NAMES.accs + '!A1', [ACCOUNT_HEADERS]);
     // Seed default categories
     const catRows = DEFAULT_CATEGORIES.map(c => CAT_HEADERS.map(h => c[h] || ''));
     if (catRows.length) {
       await this.writeValues(r.spreadsheetId, SHEET_NAMES.cats + '!A2', catRows);
+    }
+    // Seed default accounts
+    const accRows = DEFAULT_ACCOUNTS.map(a => ACCOUNT_HEADERS.map(h => a[h] || ''));
+    if (accRows.length) {
+      await this.writeValues(r.spreadsheetId, SHEET_NAMES.accs + '!A2', accRows);
     }
     return r.spreadsheetId;
   },
@@ -703,6 +767,7 @@ const DataStore = {
     spreadsheetUrl: null,
     transactions: [],
     categories: [],
+    accounts: [],
     lastSyncAt: null,
     dirty: false,
   },
@@ -741,28 +806,63 @@ const DataStore = {
 
   async pullFromSheets() {
     const id = this.state.spreadsheetId;
-    const [txRows, catRows] = await Promise.all([
-      SheetsAPI.getValues(id, SHEET_NAMES.tx + '!A:G'),
+    // Ensure accounts sheet exists
+    await this.ensureAccountsSheet();
+    const [txRows, catRows, accRows] = await Promise.all([
+      SheetsAPI.getValues(id, SHEET_NAMES.tx + '!A:H'),
       SheetsAPI.getValues(id, SHEET_NAMES.cats + '!A:E'),
+      SheetsAPI.getValues(id, SHEET_NAMES.accs + '!A:E'),
     ]);
     this.state.transactions = rowsToObjects(txRows, TX_HEADERS).map(t => ({ ...t, amount: Number(t.amount) || 0 }));
     let cats = rowsToObjects(catRows, CAT_HEADERS);
     if (cats.length === 0) {
-      // Fresh sheet, seed defaults locally + push
       cats = [...DEFAULT_CATEGORIES];
       this.state.categories = cats;
       await this.pushCategoriesToSheets();
     } else {
       this.state.categories = cats;
     }
+    let accs = rowsToObjects(accRows, ACCOUNT_HEADERS);
+    if (accs.length === 0) {
+      accs = [...DEFAULT_ACCOUNTS];
+      this.state.accounts = accs;
+      await this.pushAccountsToSheets();
+    } else {
+      this.state.accounts = accs;
+    }
+    // Backfill missing account_id on transactions
+    const defAcc = this.state.accounts[0]?.id;
+    this.state.transactions.forEach(t => { if (!t.account_id) t.account_id = defAcc; });
+  },
+  async ensureAccountsSheet() {
+    const id = this.state.spreadsheetId;
+    try {
+      const meta = await SheetsAPI._fetch(`https://sheets.googleapis.com/v4/spreadsheets/${id}?fields=sheets.properties`);
+      const has = (meta.sheets || []).some(s => s.properties.title === SHEET_NAMES.accs);
+      if (!has) {
+        await SheetsAPI._fetch(`https://sheets.googleapis.com/v4/spreadsheets/${id}:batchUpdate`, {
+          method: 'POST',
+          body: JSON.stringify({ requests: [{ addSheet: { properties: { title: SHEET_NAMES.accs } } }] })
+        });
+        await SheetsAPI.writeValues(id, SHEET_NAMES.accs + '!A1', [ACCOUNT_HEADERS]);
+      }
+    } catch (e) { console.warn('ensureAccountsSheet:', e); }
   },
 
   async pushTransactionsToSheets() {
     const id = this.state.spreadsheetId;
-    await SheetsAPI.clearRange(id, SHEET_NAMES.tx + '!A2:G');
+    await SheetsAPI.clearRange(id, SHEET_NAMES.tx + '!A2:H');
     const rows = this.state.transactions.map(t => TX_HEADERS.map(h => t[h] != null ? String(t[h]) : ''));
     if (rows.length) {
       await SheetsAPI.writeValues(id, SHEET_NAMES.tx + '!A2', rows);
+    }
+  },
+  async pushAccountsToSheets() {
+    const id = this.state.spreadsheetId;
+    await SheetsAPI.clearRange(id, SHEET_NAMES.accs + '!A2:E');
+    const rows = this.state.accounts.map(a => ACCOUNT_HEADERS.map(h => a[h] || ''));
+    if (rows.length) {
+      await SheetsAPI.writeValues(id, SHEET_NAMES.accs + '!A2', rows);
     }
   },
 
@@ -815,10 +915,32 @@ const DataStore = {
     this.markDirty('both');
   },
 
+  getAccounts() { return this.state.accounts; },
+  getAccount(id) { return this.state.accounts.find(a => a.id === id); },
+  addAccount(acc) {
+    acc.id = acc.id || ('acc-' + crypto.randomUUID().slice(0,8));
+    this.state.accounts.push(acc);
+    this.markDirty('accounts');
+    return acc;
+  },
+  updateAccount(id, patch) {
+    const i = this.state.accounts.findIndex(a => a.id === id);
+    if (i >= 0) { this.state.accounts[i] = { ...this.state.accounts[i], ...patch }; this.markDirty('accounts'); }
+  },
+  deleteAccount(id) {
+    if (this.state.accounts.length <= 1) { return false; }
+    const fallback = this.state.accounts.find(a => a.id !== id)?.id;
+    this.state.transactions.forEach(t => { if (t.account_id === id) t.account_id = fallback; });
+    this.state.accounts = this.state.accounts.filter(a => a.id !== id);
+    this.markDirty('all');
+    return true;
+  },
+
   markDirty(what) {
     this.state.dirty = true;
     this._dirtyWhat = this._dirtyWhat || new Set();
     if (what === 'both') { this._dirtyWhat.add('transactions'); this._dirtyWhat.add('categories'); }
+    else if (what === 'all') { this._dirtyWhat.add('transactions'); this._dirtyWhat.add('categories'); this._dirtyWhat.add('accounts'); }
     else this._dirtyWhat.add(what);
     this.saveToCache();
     Sync.schedule();
@@ -831,6 +953,7 @@ const DataStore = {
     try {
       if (what.has('transactions')) await this.pushTransactionsToSheets();
       if (what.has('categories')) await this.pushCategoriesToSheets();
+      if (what.has('accounts')) await this.pushAccountsToSheets();
       this.state.dirty = false;
       this.state.lastSyncAt = new Date().toISOString();
       this.saveToCache();
