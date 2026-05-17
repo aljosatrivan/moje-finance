@@ -960,7 +960,7 @@ function loadModuleIframe(name) {
     el.classList.toggle('active', el.dataset.module === name);
   });
   document.getElementById('contentArea').innerHTML =
-    `<iframe class="content-iframe" id="moduleIframe" src="${mod.url}?from=dashboard${window._pendingAccount ? '&account=' + encodeURIComponent(window._pendingAccount) : ''}" title="${mod.title}"></iframe>`;
+    `<iframe class="content-iframe" id="moduleIframe" src="${mod.url}?from=dashboard&_=${Date.now()}${window._pendingAccount ? '&account=' + encodeURIComponent(window._pendingAccount) : ''}" title="${mod.title}"></iframe>`;
   // Pass token after iframe loads
   const iframe = document.getElementById('moduleIframe');
   iframe.addEventListener('load', () => {
