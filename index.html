@@ -420,6 +420,9 @@
     .nav-submenu .nav-sub-item { display: flex; align-items: center; gap: 8px; padding: 6px 10px; font-size: 13px; color: rgba(255,255,255,0.7); cursor: pointer; border-radius: 6px; }
     .nav-submenu .nav-sub-item:hover { background: rgba(99, 102, 241, 0.1); color: rgba(255,255,255,0.95); }
     .nav-submenu .nav-sub-item .nav-sub-icon { font-size: 14px; }
+  
+    .topbar-date { margin-left: 16px; font-size: 13px; opacity: 0.55; text-transform: uppercase; letter-spacing: 0.4px; font-weight: 500; }
+    @media (max-width: 480px) { .topbar-date { display: none; } }
   </style>
 </head>
 <body>
@@ -496,7 +499,7 @@
   <main class="content">
     <header class="topbar">
       <button class="hamburger" onclick="openSidebar()" title="Meni">☰</button>
-      <div class="breadcrumb" id="breadcrumb"><span class="current">Domov</span></div>
+      <div class="breadcrumb" id="breadcrumb"><span class="current">Domov</span><span class="topbar-date" id="dateDisplay"></span></div>
       <div class="topbar-actions" id="topbarActions">
         <button class="icon-btn" onclick="lockNow()" title="Zakleni vse module">🔒 Zakleni</button>
       </div>
@@ -1019,12 +1022,6 @@ function renderUser() {
 function renderWelcome() {
   document.getElementById('contentArea').innerHTML = `
     <div class="welcome">
-      <div class="welcome-hero">
-        <h1>Pozdravljen, ${state.name || 'Aljoša'} 👋</h1>
-        <p>To je tvoj osebni dashboard. Z leve strani izberi modul ali klikni kartico spodaj. Vsak modul ima svoj PIN za hitri dostop.</p>
-        <div class="welcome-date" id="dateDisplay"></div>
-      </div>
-
       <div class="section-title">Hitri pregled</div>
       <div class="widgets-grid">
         <div class="widget widget-list" id="widgetMail">
@@ -1049,16 +1046,6 @@ function renderWelcome() {
       </div>
       <div class="section-title">Računi</div>
       <div class="accounts-tiles" id="accountsTiles"><div class="acc-tile-empty">Nalaganje…</div></div>
-      <div class="section-title">Osebno</div>
-      <div class="cards-grid">
-        <div class="card" onclick="openModule('finance')">
-          <div class="card-icon">💰</div>
-          <h3>Finance</h3>
-          <p>Beleženje prihodkov in odhodkov, grafi, statistika. Podatki v tvojem Google Drive-u.</p>
-          <span class="pill live">Aktivno</span>
-        </div>
-      </div>
-
       <div class="section-title">Službeno (Bilumina)</div>
       <div class="cards-grid">
         <div class="card disabled">
