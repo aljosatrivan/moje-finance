@@ -1892,6 +1892,7 @@ document.addEventListener('DOMContentLoaded', boot);
           return topics.some(function(t){ return norm.includes(_normalizeText(t)); });
         } catch(e) { window._articleBodyCache[item.link] = null; return false; }
       }
+      const __numNews = (function(){ try { const s = JSON.parse(localStorage.getItem('dashboard_settings') || '{}'); const n = Number(s.newsCount); return (isFinite(n) && n >= 1 && n <= 20) ? n : 5; } catch(e){ return 5; } })();
       let matched = _match(itemsForFilter);
       if (matched.length < 5 && itemsForFilter !== allItems) {
         const matchedAll = _match(allItems);
