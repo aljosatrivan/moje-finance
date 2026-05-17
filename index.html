@@ -439,6 +439,7 @@
     .news-source { display: inline-block; font-size: 9px; font-weight: 700; letter-spacing: 0.5px; padding: 1px 5px; border-radius: 4px; margin-right: 6px; vertical-align: middle; }
     .news-source.rtvslo { background: #1d4ed8; color: #fff; }
     .news-source.ur24 { background: #dc2626; color: #fff; }
+    .news-source.siol { background: #f59e0b; color: #1c1917; }
     @media (max-width: 720px) { .widgets-grid-cal { grid-template-columns: 1fr; } }
   
     .icon-btn { background: transparent; border: 1px solid var(--border, #334155); color: var(--text); padding: 6px 10px; border-radius: 6px; cursor: pointer; font-size: 14px; margin-left: 6px; transition: background 0.15s; }
@@ -1829,15 +1830,25 @@ document.addEventListener('DOMContentLoaded', boot);
         return DEFAULT_NEWS_TOPICS;
       })();
       // Fetch multiple feeds in parallel: top, slovenia, world, sport, economy, chronicle
-      const FEEDS = [
-        'https://www.rtvslo.si/feeds/00.xml',
-        'https://www.rtvslo.si/feeds/01.xml',
-        'https://www.rtvslo.si/feeds/02.xml',
-        'https://www.rtvslo.si/feeds/03.xml',
-        'https://www.rtvslo.si/feeds/04.xml',
-        'https://www.rtvslo.si/feeds/08.xml',
-        'https://www.24ur.com/rss',
-      ];
+      // Source-grouped feeds; toggle in settings
+      const SOURCES = {
+        rtvslo: [
+          'https://www.rtvslo.si/feeds/00.xml',
+          'https://www.rtvslo.si/feeds/01.xml',
+          'https://www.rtvslo.si/feeds/02.xml',
+          'https://www.rtvslo.si/feeds/03.xml',
+          'https://www.rtvslo.si/feeds/04.xml',
+          'https://www.rtvslo.si/feeds/08.xml',
+        ],
+        ur24: ['https://www.24ur.com/rss'],
+        siol: ['https://siol.net/feeds/latest'],
+      };
+      const _newsSettings = (function(){ try { return JSON.parse(localStorage.getItem('dashboard_settings') || '{}'); } catch(e){ return {}; } })();
+      const FEEDS = [];
+      if (_newsSettings.srcRtv !== false) FEEDS.push(...SOURCES.rtvslo);
+      if (_newsSettings.src24ur !== false) FEEDS.push(...SOURCES.ur24);
+      if (_newsSettings.srcSiol !== false) FEEDS.push(...SOURCES.siol);
+      if (FEEDS.length === 0) return { items: [], totalMatched: 0, topics, pool: 0 };
       const feedResults = await Promise.all(FEEDS.map(async function(feed){
         try {
           const url = 'https://corsproxy.io/?url=' + encodeURIComponent(feed);
@@ -1892,7 +1903,7 @@ document.addEventListener('DOMContentLoaded', boot);
           return topics.some(function(t){ return norm.includes(_normalizeText(t)); });
         } catch(e) { window._articleBodyCache[item.link] = null; return false; }
       }
-      const __numNews = (function(){ try { const s = JSON.parse(localStorage.getItem('dashboard_settings') || '{}'); const n = Number(s.newsCount); return (isFinite(n) && n >= 1 && n <= 20) ? n : 5; } catch(e){ return 5; } })();
+      const __numNews = (function(){ try { const s = JSON.parse(localStorage.getItem('dashboard_settings') || '{}'); const n = Number(s.newsCount); return (isFinite(n) && n >= 1 && n <= 30) ? n : 10; } catch(e){ return 10; } })();
       let matched = _match(itemsForFilter);
       if (matched.length < 5 && itemsForFilter !== allItems) {
         const matchedAll = _match(allItems);
@@ -1967,6 +1978,7 @@ document.addEventListener('DOMContentLoaded', boot);
           let source = '';
           if (link.indexOf('rtvslo.si') >= 0) source = '<span class="news-source rtvslo">RTV</span>';
           else if (link.indexOf('24ur.com') >= 0) source = '<span class="news-source ur24">24ur</span>';
+          else if (link.indexOf('siol.net') >= 0) source = '<span class="news-source siol">SIOL</span>';
           return '<li data-link="' + link + '"><div class="item-main">' + source + esc(n.title) + (n.desc ? '<div class="item-snippet">' + esc(n.desc.substring(0, 200)) + '</div>' : '') + '</div><span class="item-date">' + esc(fmtNewsDate(n.pubDate)) + '</span></li>';
         }).join('');
         if (ul.innerHTML !== newHtml) ul.innerHTML = newHtml;
@@ -2045,14 +2057,17 @@ document.addEventListener('DOMContentLoaded', boot);
     visAccounts: true, visNews: true,
     newsTopics: 'Palestina, Iran, Pogačar, Roglič, Dončić',
     refMail: 30, refForMe: 300, refTx: 30, refCal: 120, refAcc: 30, refNews: 60,
-    newsCount: 5,
+    newsCount: 10,
+    srcRtv: true, src24ur: true, srcSiol: true,
   };
   function getSettings() {
     try { return Object.assign({}, DEFAULT_SETTINGS, JSON.parse(localStorage.getItem('dashboard_settings') || '{}')); }
     catch(e) { return Object.assign({}, DEFAULT_SETTINGS); }
   }
   function saveSettingsObj(s) { localStorage.setItem('dashboard_settings', JSON.stringify(s)); }
+  let _oldSettings = null;
   window.openSettings = function() {
+    _oldSettings = getSettings();
     const s = getSettings();
     document.getElementById('setVisMail').checked = s.visMail;
     document.getElementById('setVisForMe').checked = s.visForMe;
@@ -2069,6 +2084,11 @@ document.addEventListener('DOMContentLoaded', boot);
     }
     const ncEl = document.getElementById('setNewsCount');
     if (ncEl) ncEl.value = (s.newsCount !== undefined) ? s.newsCount : DEFAULT_SETTINGS.newsCount;
+    const srcMap = { setSrcRtv: 'srcRtv', setSrc24ur: 'src24ur', setSrcSiol: 'srcSiol' };
+    for (const id in srcMap) {
+      const el = document.getElementById(id);
+      if (el) el.checked = (s[srcMap[id]] !== false);
+    }
     // Biometric (async availability check)
     const biomChk = document.getElementById('setBiometric');
     const biomStatus = document.getElementById('biometricStatus');
@@ -2108,7 +2128,10 @@ document.addEventListener('DOMContentLoaded', boot);
       refCal: Math.max(30, Number(document.getElementById('setRefCal').value) || DEFAULT_SETTINGS.refCal),
       refAcc: Math.max(5, Number(document.getElementById('setRefAcc').value) || DEFAULT_SETTINGS.refAcc),
       refNews: Math.max(15, Number(document.getElementById('setRefNews').value) || DEFAULT_SETTINGS.refNews),
-      newsCount: Math.max(1, Math.min(20, Number(document.getElementById('setNewsCount').value) || DEFAULT_SETTINGS.newsCount)),
+      newsCount: Math.max(1, Math.min(30, Number(document.getElementById('setNewsCount').value) || DEFAULT_SETTINGS.newsCount)),
+      srcRtv: document.getElementById('setSrcRtv') ? document.getElementById('setSrcRtv').checked : true,
+      src24ur: document.getElementById('setSrc24ur') ? document.getElementById('setSrc24ur').checked : true,
+      srcSiol: document.getElementById('setSrcSiol') ? document.getElementById('setSrcSiol').checked : true,
     };
     saveSettingsObj(s);
     // Biometric: register on first enable, clear on disable
@@ -2130,7 +2153,9 @@ document.addEventListener('DOMContentLoaded', boot);
     closeSettings();
     applySettingsVisibility();
     // If news topics changed, invalidate cache + show loading
-    if (oldTopics !== JSON.stringify(topics)) {
+    const oldSources = JSON.stringify({a: (_oldSettings || {}).srcRtv, b: (_oldSettings || {}).src24ur, c: (_oldSettings || {}).srcSiol, n: (_oldSettings || {}).newsCount});
+    const newSources = JSON.stringify({a: s.srcRtv, b: s.src24ur, c: s.srcSiol, n: s.newsCount});
+    if (oldTopics !== JSON.stringify(topics) || oldSources !== newSources) {
       window._lastNews = null;
       try { localStorage.removeItem('dashboard_cache_news'); } catch(e){}
       const newsUl = document.getElementById('widgetNewsList');
@@ -2258,7 +2283,13 @@ document.addEventListener('DOMContentLoaded', boot);
           <h3>Novice — topiki</h3>
           <p class="settings-hint">Po vejicah ločen seznam ključnih besed. Velike/male črke in šumniki niso pomembni.</p>
           <textarea id="setNewsTopics" rows="3" placeholder="Palestina, Iran, Pogačar, Roglič, Dončić"></textarea>
-          <div class="refresh-row" style="margin-top:10px"><span>📰 Število novic za prikaz</span><input type="number" min="1" max="20" id="setNewsCount"> </div>
+          <div style="margin-top:8px">
+            <p class="settings-hint" style="margin-bottom:6px">Viri novic:</p>
+            <label class="settings-row"><input type="checkbox" id="setSrcRtv" checked> 🔵 RTV Slo</label>
+            <label class="settings-row"><input type="checkbox" id="setSrc24ur" checked> 🔴 24ur.com</label>
+            <label class="settings-row"><input type="checkbox" id="setSrcSiol" checked> 🟡 siol.net</label>
+          </div>
+          <div class="refresh-row" style="margin-top:10px"><span>📰 Število novic za prikaz</span><input type="number" min="1" max="30" id="setNewsCount"> </div>
         </div>
       </div>
       <div class="settings-footer">
