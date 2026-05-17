@@ -455,6 +455,14 @@
     .settings-row input[type="checkbox"]:disabled { opacity: 0.4; cursor: not-allowed; }
     .settings-row input[type="checkbox"]:disabled + * { opacity: 0.6; }
     .settings-hint { font-size: 12px; opacity: 0.6; margin: 0 0 8px 0; }
+    .refresh-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 12px; }
+    @media (max-width: 480px) { .refresh-grid { grid-template-columns: 1fr; } }
+    .refresh-row { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 6px; font-size: 13px; }
+    .refresh-row:hover { background: rgba(255,255,255,0.04); }
+    .refresh-row span { flex: 1; }
+    .refresh-row input[type="number"] { width: 60px; padding: 4px 6px; background: rgba(0,0,0,0.25); border: 1px solid var(--border, #334155); border-radius: 5px; color: var(--text); font: inherit; font-size: 12px; text-align: right; -moz-appearance: textfield; }
+    .refresh-row input[type="number"]::-webkit-inner-spin-button, .refresh-row input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+    .refresh-row input[type="number"]:focus { outline: none; border-color: var(--accent, #6366f1); }
     .settings-section textarea { width: 100%; box-sizing: border-box; padding: 10px 12px; background: rgba(0,0,0,0.25); border: 1px solid var(--border, #334155); border-radius: 8px; color: var(--text); font: inherit; font-size: 13px; resize: vertical; min-height: 70px; }
     .settings-section textarea:focus { outline: none; border-color: var(--accent, #6366f1); }
     .settings-footer { display: flex; gap: 10px; justify-content: flex-end; padding: 14px 22px; border-top: 1px solid var(--border, #334155); }
@@ -2028,6 +2036,7 @@ document.addEventListener('DOMContentLoaded', boot);
     visMail: true, visForMe: true, visFinance: true, visCalendar: true,
     visAccounts: true, visNews: true,
     newsTopics: 'Palestina, Iran, Pogačar, Roglič, Dončić',
+    refMail: 30, refForMe: 300, refTx: 30, refCal: 120, refAcc: 30, refNews: 60,
   };
   function getSettings() {
     try { return Object.assign({}, DEFAULT_SETTINGS, JSON.parse(localStorage.getItem('dashboard_settings') || '{}')); }
@@ -2043,6 +2052,12 @@ document.addEventListener('DOMContentLoaded', boot);
     document.getElementById('setVisAccounts').checked = s.visAccounts;
     document.getElementById('setVisNews').checked = s.visNews;
     document.getElementById('setNewsTopics').value = s.newsTopics || '';
+    // Refresh intervals
+    const refMap = { setRefMail: 'refMail', setRefForMe: 'refForMe', setRefTx: 'refTx', setRefCal: 'refCal', setRefAcc: 'refAcc', setRefNews: 'refNews' };
+    for (const id in refMap) {
+      const el = document.getElementById(id);
+      if (el) el.value = (s[refMap[id]] !== undefined) ? s[refMap[id]] : DEFAULT_SETTINGS[refMap[id]];
+    }
     // Biometric (async availability check)
     const biomChk = document.getElementById('setBiometric');
     const biomStatus = document.getElementById('biometricStatus');
@@ -2076,6 +2091,12 @@ document.addEventListener('DOMContentLoaded', boot);
       visAccounts: document.getElementById('setVisAccounts').checked,
       visNews: document.getElementById('setVisNews').checked,
       newsTopics: document.getElementById('setNewsTopics').value.trim(),
+      refMail: Math.max(5, Number(document.getElementById('setRefMail').value) || DEFAULT_SETTINGS.refMail),
+      refForMe: Math.max(30, Number(document.getElementById('setRefForMe').value) || DEFAULT_SETTINGS.refForMe),
+      refTx: Math.max(5, Number(document.getElementById('setRefTx').value) || DEFAULT_SETTINGS.refTx),
+      refCal: Math.max(30, Number(document.getElementById('setRefCal').value) || DEFAULT_SETTINGS.refCal),
+      refAcc: Math.max(5, Number(document.getElementById('setRefAcc').value) || DEFAULT_SETTINGS.refAcc),
+      refNews: Math.max(15, Number(document.getElementById('setRefNews').value) || DEFAULT_SETTINGS.refNews),
     };
     saveSettingsObj(s);
     // Biometric: register on first enable, clear on disable
@@ -2158,18 +2179,17 @@ document.addEventListener('DOMContentLoaded', boot);
   
   // ===== Auto-refresh widgets =====
   window._lastRefresh = window._lastRefresh || {};
-  window._minRefreshMs = {
-    mail: 30000,      // 30 s
-    tx: 30000,        // 30 s
-    accounts: 30000,  // 30 s
-    calendar: 120000, // 2 min
-    forMe: 300000,    // 5 min (heavy)
-    news: 60000,      // 1 min
-  };
+  function _getMinMs(key) {
+    const s = (typeof getSettings === 'function') ? getSettings() : {};
+    const map = { mail: s.refMail, tx: s.refTx, accounts: s.refAcc, calendar: s.refCal, forMe: s.refForMe, news: s.refNews };
+    const sec = Number(map[key]);
+    if (isFinite(sec) && sec > 0) return sec * 1000;
+    const defaults = { mail: 30000, tx: 30000, accounts: 30000, calendar: 120000, forMe: 300000, news: 60000 };
+    return defaults[key] || 60000;
+  }
   function _shouldRefresh(key) {
     const last = window._lastRefresh[key] || 0;
-    const min = window._minRefreshMs[key] || 60000;
-    return Date.now() - last >= min;
+    return Date.now() - last >= _getMinMs(key);
   }
   function _markRefreshed(key) { window._lastRefresh[key] = Date.now(); }
   // Pulsing dot in topbar indicates auto-refresh activity
@@ -2209,6 +2229,18 @@ document.addEventListener('DOMContentLoaded', boot);
           <p class="settings-hint">Namesto PIN-a uporabi prstni odtis (ali Face ID/Windows Hello). PIN ostane kot rezerva.</p>
           <label class="settings-row"><input type="checkbox" id="setBiometric"> 🔐 Prstni odtis namesto PIN-a</label>
           <p class="settings-hint" id="biometricStatus" style="margin-top:4px"></p>
+        </div>
+        <div class="settings-section">
+          <h3>Osveževanje widgetov (sekunde)</h3>
+          <p class="settings-hint">Kako pogosto naj se vsak widget osveži. Manjše = svežiji podatki, večja poraba.</p>
+          <div class="refresh-grid">
+            <label class="refresh-row"><span>📧 Maili</span><input type="number" min="5" max="3600" id="setRefMail"> s</label>
+            <label class="refresh-row"><span>📌 Zame</span><input type="number" min="30" max="3600" id="setRefForMe"> s</label>
+            <label class="refresh-row"><span>💰 Transakcije</span><input type="number" min="5" max="3600" id="setRefTx"> s</label>
+            <label class="refresh-row"><span>📅 Koledar</span><input type="number" min="30" max="3600" id="setRefCal"> s</label>
+            <label class="refresh-row"><span>🏦 Računi</span><input type="number" min="5" max="3600" id="setRefAcc"> s</label>
+            <label class="refresh-row"><span>📰 Novice</span><input type="number" min="15" max="3600" id="setRefNews"> s</label>
+          </div>
         </div>
         <div class="settings-section">
           <h3>Novice — topiki</h3>
