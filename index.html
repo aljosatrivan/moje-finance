@@ -819,7 +819,67 @@ function startInactivityTimer() {
 
 /* ----- PIN UI ----- */
 
-function openPin(module, mode) {
+// WebAuthn biometric helpers (replaces PIN when enabled)
+  function _biomSupported() {
+    return !!(window.PublicKeyCredential && navigator.credentials && navigator.credentials.create);
+  }
+  function _biomEnabled() {
+    return localStorage.getItem('dashboard_biom_enabled') === 'true' && !!localStorage.getItem('dashboard_biom_credId');
+  }
+  async function _biomRegister() {
+    if (!_biomSupported()) { alert('Tvoja naprava ne podpira biometričnega odklepa.'); return false; }
+    try {
+      const challenge = crypto.getRandomValues(new Uint8Array(32));
+      const userId = new TextEncoder().encode((state.email || 'user').padEnd(16, '_').substring(0, 16));
+      const cred = await navigator.credentials.create({
+        publicKey: {
+          challenge,
+          rp: { name: 'Aljošov Dashboard' },
+          user: { id: userId, name: state.email || 'user', displayName: state.name || 'Aljoša' },
+          pubKeyCredParams: [{ type: 'public-key', alg: -7 }, { type: 'public-key', alg: -257 }],
+          authenticatorSelection: { authenticatorAttachment: 'platform', userVerification: 'required' },
+          timeout: 60000,
+          attestation: 'none',
+        },
+      });
+      if (cred && cred.rawId) {
+        const raw = new Uint8Array(cred.rawId);
+        let bin = '';
+        for (const b of raw) bin += String.fromCharCode(b);
+        localStorage.setItem('dashboard_biom_credId', btoa(bin));
+        localStorage.setItem('dashboard_biom_enabled', 'true');
+        return true;
+      }
+    } catch(e) { console.warn('biom register failed', e); alert('Registracija prstnega odtisa ni uspela: ' + e.message); }
+    return false;
+  }
+  async function _biomAuthenticate() {
+    if (!_biomSupported() || !_biomEnabled()) return false;
+    try {
+      const challenge = crypto.getRandomValues(new Uint8Array(32));
+      const credIdB64 = localStorage.getItem('dashboard_biom_credId');
+      const raw = Uint8Array.from(atob(credIdB64), function(c){ return c.charCodeAt(0); });
+      const assertion = await navigator.credentials.get({
+        publicKey: {
+          challenge,
+          allowCredentials: [{ id: raw, type: 'public-key' }],
+          userVerification: 'required',
+          timeout: 60000,
+        },
+      });
+      return !!assertion;
+    } catch(e) { console.warn('biom auth failed', e); return false; }
+  }
+  // unlockModule: tries biometric first, falls back to PIN
+  async function unlockModule(moduleName) {
+    if (_biomEnabled()) {
+      const ok = await _biomAuthenticate();
+      if (ok) return {};  // success — skip PIN
+      // user cancelled or failed → fall through to PIN below
+    }
+    return openPin(moduleName, 'enter');
+  }
+  function openPin(module, mode) {
   state.pinCurrentModule = module;
   state.pinCurrentMode = mode;
   state.pinDigits = '';
@@ -966,7 +1026,7 @@ async function openModule(name, account) {
   // Check if already unlocked (within session)
   if (!moduleUnlocked(name)) {
     if (moduleHasPin(name)) {
-      const r = await openPin(name, 'enter');
+      const r = await unlockModule(name);
       if (!r || r.cancelled) return;
     } else {
       toast('Nastavi PIN za hitri dostop do tega modula');
@@ -1202,7 +1262,11 @@ async function boot() {
 document.getElementById('btnLogin').addEventListener('click', () => {
   showScreen('loadingScreen');
   setLoading('Prijavljam...', 'Čakam Google avtorizacijo');
-  requestToken(true);
+  // Try silent OAuth first (mobile direct-connect); fallback to interactive after 3s
+  requestToken(false);
+  setTimeout(function(){
+    if (!state.accessToken) requestToken(true);
+  }, 3000);
 });
 
 // PIN pad events
@@ -1870,6 +1934,15 @@ document.addEventListener('DOMContentLoaded', boot);
     document.getElementById('setVisAccounts').checked = s.visAccounts;
     document.getElementById('setVisNews').checked = s.visNews;
     document.getElementById('setNewsTopics').value = s.newsTopics || '';
+    // Biometric
+    const biomChk = document.getElementById('setBiometric');
+    const biomStatus = document.getElementById('biometricStatus');
+    if (biomChk) biomChk.checked = _biomEnabled();
+    if (biomStatus) {
+      if (!_biomSupported()) biomStatus.textContent = '⚠️ Brskalnik/naprava ne podpira biometričnega odklepa.';
+      else if (_biomEnabled()) biomStatus.textContent = '✓ Biometrika je nastavljena za to napravo.';
+      else biomStatus.textContent = 'Klikni in shrani — pojavil se bo poziv za nastavitev.';
+    }
     document.getElementById('settingsModal').style.display = 'flex';
   };
   window.closeSettings = function() { document.getElementById('settingsModal').style.display = 'none'; };
@@ -1884,6 +1957,18 @@ document.addEventListener('DOMContentLoaded', boot);
       newsTopics: document.getElementById('setNewsTopics').value.trim(),
     };
     saveSettingsObj(s);
+    // Biometric: register on first enable, clear on disable
+    const biomChk = document.getElementById('setBiometric');
+    if (biomChk) {
+      const wantBiom = biomChk.checked;
+      const isEn = _biomEnabled();
+      if (wantBiom && !isEn) {
+        _biomRegister().then(function(ok){ if (!ok) biomChk.checked = false; });
+      } else if (!wantBiom && isEn) {
+        localStorage.removeItem('dashboard_biom_enabled');
+        localStorage.removeItem('dashboard_biom_credId');
+      }
+    }
     // Persist news topics as JSON list for the news fetcher
     const topics = s.newsTopics.split(',').map(function(t){ return t.trim(); }).filter(function(t){ return t.length > 0; });
     localStorage.setItem('dashboard_news_topics', JSON.stringify(topics));
@@ -1955,6 +2040,12 @@ document.addEventListener('DOMContentLoaded', boot);
           <label class="settings-row"><input type="checkbox" id="setVisCalendar" checked> 📅 Naslednji dogodki</label>
           <label class="settings-row"><input type="checkbox" id="setVisAccounts" checked> 🏦 Računi tiles</label>
           <label class="settings-row"><input type="checkbox" id="setVisNews" checked> 📰 RTV Slo novice</label>
+        </div>
+        <div class="settings-section">
+          <h3>Varnost — odklepanje modulov</h3>
+          <p class="settings-hint">Namesto PIN-a uporabi prstni odtis (ali Face ID/Windows Hello). PIN ostane kot rezerva.</p>
+          <label class="settings-row"><input type="checkbox" id="setBiometric"> 🔐 Prstni odtis namesto PIN-a</label>
+          <p class="settings-hint" id="biometricStatus" style="margin-top:4px"></p>
         </div>
         <div class="settings-section">
           <h3>Novice — topiki</h3>
