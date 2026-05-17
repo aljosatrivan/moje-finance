@@ -1150,7 +1150,7 @@ function renderOverview() {
     });
   // Pie click drill-down: build sub-cat map + attach click handler
   const _pieSubMap = {};
-  filtered.filter(t => t.type === 'expense').forEach(function(t){
+  txs.filter(t => t.type === 'expense').forEach(function(t){
     const desc = (t.description || '').trim() || '(brez opisa)';
     if (!_pieSubMap[t.category_id]) _pieSubMap[t.category_id] = {};
     _pieSubMap[t.category_id][desc] = (_pieSubMap[t.category_id][desc] || 0) + Number(t.amount);
