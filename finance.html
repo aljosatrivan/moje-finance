@@ -1214,7 +1214,7 @@ function rangeFilter(txs) {
 }
 
 function renderStatistics() {
-  const _accSelSt = document.getElementById('filterAccountStats') || document.getElementById('filterAccount'); const _accValSt = _accSelSt ? _accSelSt.value : 'all'; const txs = rangeFilter(DataStore.getTransactions()).filter(t => _accValSt === 'all' || t.account_id === _accValSt);
+  const _accSelSt = document.getElementById('filterAccountStats') || document.getElementById('filterAccount'); const _accValSt = _accSelSt ? _accSelSt.value : 'all'; const _txsForCatBars = rangeFilter(DataStore.getTransactions()).filter(t => _accValSt === 'all' || t.account_id === _accValSt); const _disabledCats = window._statsDisabledCats || new Set(); const txs = _txsForCatBars.filter(t => !_disabledCats.has(t.category_id));
   const byMonth = {};
   txs.forEach(t => {
     const m = t.date.slice(0, 7);
@@ -1242,7 +1242,7 @@ function renderStatistics() {
   });
 
   const catSums = {};
-  txs.filter(t => t.type === 'expense').forEach(t => { catSums[t.category_id] = (catSums[t.category_id] || 0) + Number(t.amount); });
+  _txsForCatBars.filter(t => t.type === 'expense').forEach(t => { catSums[t.category_id] = (catSums[t.category_id] || 0) + Number(t.amount); });
   const total = Object.values(catSums).reduce((a,b) => a+b, 0);
   const sorted = Object.entries(catSums).sort((a,b) => b[1]-a[1]);
   const catBars = document.getElementById('catBars');
@@ -1870,7 +1870,7 @@ document.addEventListener('DOMContentLoaded', () => {
           if (!cid) return;
           if (window._statsDisabledCats.has(cid)) window._statsDisabledCats.delete(cid);
           else window._statsDisabledCats.add(cid);
-          li.classList.toggle('cat-disabled');
+          if (typeof renderAll === 'function') renderAll();
         });
       }
     }
