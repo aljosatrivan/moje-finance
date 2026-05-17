@@ -423,6 +423,12 @@
   
     .topbar-date { margin-left: 16px; font-size: 13px; opacity: 0.55; text-transform: uppercase; letter-spacing: 0.4px; font-weight: 500; }
     @media (max-width: 480px) { .topbar-date { display: none; } }
+  
+    .mail-badge { display: inline-block; font-size: 9px; font-weight: 700; letter-spacing: 0.5px; padding: 1px 5px; border-radius: 4px; margin-right: 6px; vertical-align: middle; }
+    .mail-badge-direct { background: #22c55e; color: #052e16; }
+    .mail-badge-cc { background: #475569; color: #e2e8f0; }
+    .widget-list-items .item-snippet { font-size: 12px; opacity: 0.5; margin-top: 4px; line-height: 1.35; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+    .widgets-grid-cal { grid-template-columns: 1fr; }
   </style>
 </head>
 <body>
@@ -546,7 +552,7 @@
 ========================================================= */
 
 const CLIENT_ID = '540110413847-lauuop1iefm54rljscsqaqc39f1vh1ti.apps.googleusercontent.com';
-const SCOPES = 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/gmail.readonly openid email profile';
+const SCOPES = 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/calendar.readonly openid email profile';
 const CONFIG_FILENAME = 'dashboard-config.json';
 const SESSION_TIMEOUT_MIN = 15;
 
@@ -1044,6 +1050,17 @@ function renderWelcome() {
           </ul>
         </div>
       </div>
+      <div class="widgets-grid widgets-grid-cal">
+        <div class="widget widget-list" id="widgetCalendar">
+          <div class="widget-list-header" onclick="openCalendarExternal()">
+            <span class="widget-icon">📅</span>
+            <span class="widget-title">Naslednji dogodki</span>
+          </div>
+          <ul class="widget-list-items" id="widgetCalList">
+            <li class="widget-empty">Nalaganje…</li>
+          </ul>
+        </div>
+      </div>
       <div class="section-title">Računi</div>
       <div class="accounts-tiles" id="accountsTiles"><div class="acc-tile-empty">Nalaganje…</div></div>
       <div class="section-title">Službeno (Bilumina)</div>
@@ -1151,7 +1168,7 @@ document.addEventListener('DOMContentLoaded', boot);
     window.open('https://mail.google.com/mail/u/0/', '_blank', 'noopener,noreferrer');
   }
   async function fetchTopUnreadEmails(n) {
-    n = n || 5;
+    n = (n || 5) * 3;  // overfetch so we have enough after "to me" filter
     try {
       const tok = (typeof state !== 'undefined' && state.accessToken) || null;
       if (!tok) return { error: 'no-token' };
@@ -1172,7 +1189,7 @@ document.addEventListener('DOMContentLoaded', boot);
       } catch(e) {}
       if (!j1.messages || !j1.messages.length) return { emails: [], totalUnread: 0 };
       const emails = await Promise.all(j1.messages.map(async function(m){
-        const r2 = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/' + m.id + '?format=metadata&metadataHeaders=Subject&metadataHeaders=From&metadataHeaders=Date', {
+        const r2 = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/' + m.id + '?format=metadata&metadataHeaders=Subject&metadataHeaders=From&metadataHeaders=Date&metadataHeaders=To&metadataHeaders=Cc', {
           headers: { Authorization: 'Bearer ' + tok }
         });
         if (!r2.ok) return null;
@@ -1182,15 +1199,29 @@ document.addEventListener('DOMContentLoaded', boot);
           const found = hdrs.find(function(h){ return h.name.toLowerCase() === name.toLowerCase(); });
           return found ? found.value : '';
         }
+        const myEmail = (state.email || '').toLowerCase();
+        const toRaw = getH('To').toLowerCase();
+        const ccRaw = getH('Cc').toLowerCase();
+        const directToMe = myEmail && toRaw.includes(myEmail);
+        const onlyCcMe = myEmail && !directToMe && ccRaw.includes(myEmail);
         return {
           id: m.id,
           subject: getH('Subject') || '(brez naslova)',
           from: getH('From'),
+          to: getH('To'),
           date: getH('Date'),
           internalDate: j2.internalDate ? new Date(parseInt(j2.internalDate, 10)) : null,
+          snippet: (j2.snippet || '').replace(/\s+/g, ' ').substring(0, 140),
+          directToMe: directToMe,
+          onlyCcMe: onlyCcMe,
         };
       }));
-      return { emails: emails.filter(function(e){ return e; }), totalUnread: totalUnread };
+      const valid = emails.filter(function(e){ return e; });
+      const direct = valid.filter(function(e){ return e.directToMe; });
+      // Pick direct first, fill remainder with non-direct if needed
+      const top = direct.slice(0, 5);
+      if (top.length < 5) for (const e of valid) { if (top.length >= 5) break; if (!top.includes(e)) top.push(e); }
+      return { emails: top, totalUnread: totalUnread, directCount: direct.length };
     } catch (e) { return { error: 'js-' + e.message }; }
   }
   async function fetchTopTransactions(n) {
@@ -1270,7 +1301,9 @@ document.addEventListener('DOMContentLoaded', boot);
             const subj = esc(e.subject);
             const from = esc((e.from || '').replace(/<.*>$/, '').replace(/"/g, '').trim());
             const dt = fmtDateShort(e.internalDate);
-            return '<li><div class="item-main">' + subj + '<div class="item-sub">' + from + '</div></div><span class="item-date">' + dt + '</span></li>';
+            const snip = esc(e.snippet || '');
+            const badge = e.directToMe ? '<span class="mail-badge mail-badge-direct" title="Direktno tebi">TI</span>' : (e.onlyCcMe ? '<span class="mail-badge mail-badge-cc" title="V kopiji">CC</span>' : '');
+            return '<li><div class="item-main">' + badge + subj + '<div class="item-sub">' + from + '</div>' + (snip ? '<div class="item-snippet">' + snip + '</div>' : '') + '</div><span class="item-date">' + dt + '</span></li>';
           }).join('');
         }
       } else {
@@ -1395,12 +1428,82 @@ document.addEventListener('DOMContentLoaded', boot);
       }
     }
   }
+  // Calendar
+  function openCalendarExternal() { window.open('https://calendar.google.com/', '_blank', 'noopener,noreferrer'); }
+  async function fetchUpcomingEvents(n) {
+    n = n || 5;
+    try {
+      const tok = (typeof state !== 'undefined' && state.accessToken) || null;
+      if (!tok) return { error: 'no-token' };
+      const now = new Date().toISOString();
+      const r = await fetch('https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin=' + encodeURIComponent(now) + '&maxResults=' + n + '&singleEvents=true&orderBy=startTime', {
+        headers: { Authorization: 'Bearer ' + tok }
+      });
+      if (r.status === 401 || r.status === 403) return { error: 'no-scope-or-api' };
+      if (!r.ok) return { error: 'http-' + r.status };
+      const j = await r.json();
+      return { events: (j.items || []).map(function(e){
+        return {
+          id: e.id,
+          summary: e.summary || '(brez naslova)',
+          start: e.start && (e.start.dateTime || e.start.date),
+          isAllDay: !!(e.start && e.start.date && !e.start.dateTime),
+          location: e.location || '',
+          htmlLink: e.htmlLink,
+        };
+      })};
+    } catch (e) { return { error: 'js-' + e.message }; }
+  }
+  function fmtEventTime(iso, isAllDay) {
+    if (!iso) return '';
+    try {
+      const d = new Date(iso);
+      const now = new Date();
+      const sameDay = d.toDateString() === now.toDateString();
+      const tomorrow = new Date(now); tomorrow.setDate(now.getDate() + 1);
+      const isTomorrow = d.toDateString() === tomorrow.toDateString();
+      if (isAllDay) {
+        if (sameDay) return 'danes';
+        if (isTomorrow) return 'jutri';
+        return d.toLocaleDateString('sl-SI', { weekday: 'short', day: '2-digit', month: '2-digit' });
+      }
+      const time = d.toLocaleTimeString('sl-SI', { hour: '2-digit', minute: '2-digit' });
+      if (sameDay) return 'danes ' + time;
+      if (isTomorrow) return 'jutri ' + time;
+      return d.toLocaleDateString('sl-SI', { weekday: 'short', day: '2-digit', month: '2-digit' }) + ' ' + time;
+    } catch (e) { return ''; }
+  }
+  window._lastEvents = (typeof window._lastEvents !== 'undefined') ? window._lastEvents : _cacheGet('cal');
+  async function loadCalendarWidget() {
+    const ul = document.getElementById('widgetCalList');
+    if (!ul) return;
+    const res = await fetchUpcomingEvents(5);
+    const ok = res && !res.error && Array.isArray(res.events);
+    const useEvents = ok ? res.events : (window._lastEvents || []);
+    if (ok && res.events.length > 0) { window._lastEvents = res.events; _cacheSet('cal', res.events); }
+    if (!ok && !useEvents.length) {
+      if (res && res.error && res.error.indexOf('scope') >= 0) {
+        ul.innerHTML = '<li class="widget-list-error">Za prikaz koledarja se odjavi in prijavi (dodatno dovoljenje za Koledar). Nato omogoči Calendar API v Google Cloud.</li>';
+      } else if (res && res.error) {
+        ul.innerHTML = '<li class="widget-list-error">Napaka: ' + esc(res.error) + '</li>';
+      } else {
+        ul.innerHTML = '<li class="widget-list-error">Ni podatkov o koledarju.</li>';
+      }
+      return;
+    }
+    if (!useEvents.length) { ul.innerHTML = '<li class="widget-empty">Ni prihajajočih dogodkov ✓</li>'; return; }
+    ul.innerHTML = useEvents.slice(0, 5).map(function(e){
+      const t = fmtEventTime(e.start, e.isAllDay);
+      const loc = e.location ? '<div class="item-sub">📍 ' + esc(e.location) + '</div>' : '';
+      return '<li><div class="item-main">' + esc(e.summary) + loc + '</div><span class="item-date">' + esc(t) + '</span></li>';
+    }).join('');
+  }
   // Wrap loadHomeWidgets to also load tiles
   if (typeof window.loadHomeWidgets === 'function') {
     const _olhw = window.loadHomeWidgets;
-    window.loadHomeWidgets = function() { _olhw.apply(this, arguments); loadAccountsTiles(); };
+    window.loadHomeWidgets = function() { _olhw.apply(this, arguments); loadAccountsTiles(); loadCalendarWidget(); };
   } else {
-    window.loadHomeWidgets = loadAccountsTiles;
+    window.loadHomeWidgets = function() { loadAccountsTiles(); loadCalendarWidget(); };
   }
   
   // MutationObserver — fires loadHomeWidgets whenever the welcome HTML is rendered
