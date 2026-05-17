@@ -1939,7 +1939,7 @@ document.addEventListener('DOMContentLoaded', boot);
           const doc = new DOMParser().parseFromString(htmlText, 'text/html');
           const el = doc.querySelector('article') || doc.querySelector('.article-body') || doc.querySelector('main') || doc.body;
           const text = (el && el.textContent) ? el.textContent : '';
-          const norm = _normalizeText(text.substring(0, 600));
+          const norm = _normalizeText(text.substring(0, 3000));
           window._articleBodyCache[item.link] = norm;
           return topics.some(function(t){ return _topicAtWordStart(norm, t); });
         } catch(e) { window._articleBodyCache[item.link] = null; return false; }
