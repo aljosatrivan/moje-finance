@@ -1489,7 +1489,7 @@ document.addEventListener('DOMContentLoaded', boot);
         if (!useRes.emails.length) {
           mailList.innerHTML = '<li class="widget-empty">Ni neprebranih mailov ✓</li>';
         } else {
-          mailList.innerHTML = useRes.emails.map(function(e){
+          const _mailH = useRes.emails.map(function(e){
             const subj = esc(e.subject);
             const from = esc((e.from || '').replace(/<.*>$/, '').replace(/"/g, '').trim());
             const dt = fmtDateShort(e.internalDate);
@@ -1497,6 +1497,7 @@ document.addEventListener('DOMContentLoaded', boot);
             const snipCls = e.aiSummary ? ' ai-summary' : '';
             return '<li><div class="item-main">' + subj + '<div class="item-sub">' + from + '</div>' + (snip ? '<div class="item-snippet' + snipCls + '">' + snip + '</div>' : '') + '</div><span class="item-date">' + dt + '</span></li>';
           }).join('');
+          if (mailList.innerHTML !== _mailH) mailList.innerHTML = _mailH;
         }
       } else {
         // No cache yet — show error message
@@ -1519,7 +1520,7 @@ document.addEventListener('DOMContentLoaded', boot);
       if (!txs) { txList.innerHTML = '<li class="widget-list-error">Napaka pri branju finančnih podatkov.</li>'; }
       else if (!txs.length) { txList.innerHTML = '<li class="widget-empty">Ni transakcij.</li>'; }
       else {
-        txList.innerHTML = txs.map(function(t){
+        const _txH = txs.map(function(t){
           const desc = esc(t.description || t.cat_name || 'Brez opisa');
           const cat = esc((t.cat_icon ? t.cat_icon + ' ' : '') + (t.cat_name || ''));
           const sign = t.type === 'income' ? '+' : '−';
@@ -1528,6 +1529,7 @@ document.addEventListener('DOMContentLoaded', boot);
           const dt = (t.date || '').split('-').reverse().slice(0,2).join('.');
           return '<li><div class="item-main">' + desc + '<div class="item-sub">' + cat + '</div></div><span class="item-amount ' + cls + '">' + esc(amount) + '</span><span class="item-date">' + esc(dt) + '</span></li>';
         }).join('');
+        if (txList.innerHTML !== _txH) txList.innerHTML = _txH;
       }
     }
   }
@@ -1779,7 +1781,7 @@ document.addEventListener('DOMContentLoaded', boot);
       if (cnt) cnt.textContent = String(useRes.totalForMe || useRes.emails.length || 0);
       if (!useRes.emails.length) { ul.innerHTML = '<li class="widget-empty">Trenutno nič posebej zate ✓</li>'; }
       else {
-        ul.innerHTML = useRes.emails.map(function(e){
+        const _forMeH = useRes.emails.map(function(e){
           const subj = esc(e.subject);
           const from = esc((e.from || '').replace(/<.*>$/, '').replace(/"/g, '').trim());
           const dt = fmtDateShort(e.internalDate);
@@ -1788,6 +1790,7 @@ document.addEventListener('DOMContentLoaded', boot);
           const tag = e.soleRecipient ? '<span class="mail-badge mail-badge-direct" title="Samo zate">SOLO</span>' : '<span class="mail-badge mail-badge-cc" title="Eksplicitno omenjeno tvoje ime">@ TI</span>';
           return '<li><div class="item-main">' + tag + subj + '<div class="item-sub">' + from + '</div>' + (snip ? '<div class="item-snippet' + snipCls + '">' + snip + '</div>' : '') + '</div><span class="item-date">' + dt + '</span></li>';
         }).join('');
+        if (ul.innerHTML !== _forMeH) ul.innerHTML = _forMeH;
       }
     } else {
       if (cnt) cnt.textContent = '?';
@@ -1898,12 +1901,20 @@ document.addEventListener('DOMContentLoaded', boot);
       if (cnt) cnt.textContent = String(useRes.totalMatched || useRes.items.length || 0);
       if (!useRes.items.length) ul.innerHTML = '<li class="widget-empty">Trenutno ni novic za tvoje topike</li>';
       else {
-        ul.innerHTML = useRes.items.map(function(n){
-          const link = n.link.replace(/"/g, '');
-          return '<li onclick="window.open(\'' + link + '\', \'_blank\', \'noopener,noreferrer\')" style="cursor:pointer">' +
-            '<div class="item-main">' + esc(n.title) + (n.desc ? '<div class="item-snippet">' + esc(n.desc.substring(0, 200)) + '</div>' : '') + '</div>' +
-            '<span class="item-date">' + esc(fmtNewsDate(n.pubDate)) + '</span></li>';
+        const newHtml = useRes.items.map(function(n){
+          const link = (n.link || '').replace(/"/g, '');
+          return '<li data-link="' + link + '"><div class="item-main">' + esc(n.title) + (n.desc ? '<div class="item-snippet">' + esc(n.desc.substring(0, 200)) + '</div>' : '') + '</div><span class="item-date">' + esc(fmtNewsDate(n.pubDate)) + '</span></li>';
         }).join('');
+        if (ul.innerHTML !== newHtml) ul.innerHTML = newHtml;
+        if (!ul._delegated) {
+          ul._delegated = true;
+          ul.addEventListener('click', function(e){
+            const li = e.target.closest('li[data-link]');
+            if (!li) return;
+            const link = li.getAttribute('data-link');
+            if (link) window.open(link, '_blank', 'noopener,noreferrer');
+          });
+        }
       }
     } else {
       if (cnt) cnt.textContent = '?';
@@ -1928,11 +1939,12 @@ document.addEventListener('DOMContentLoaded', boot);
       return;
     }
     if (!useEvents.length) { ul.innerHTML = '<li class="widget-empty">Ni prihajajočih dogodkov ✓</li>'; return; }
-    ul.innerHTML = useEvents.slice(0, 5).map(function(e){
+    const _calH = useEvents.slice(0, 5).map(function(e){
       const t = fmtEventTime(e.start, e.isAllDay);
       const loc = e.location ? '<div class="item-sub">📍 ' + esc(e.location) + '</div>' : '';
       return '<li><div class="item-main">' + esc(e.summary) + loc + '</div><span class="item-date">' + esc(t) + '</span></li>';
     }).join('');
+    if (ul.innerHTML !== _calH) ul.innerHTML = _calH;
   }
   // Wrap loadHomeWidgets to also load tiles
   if (typeof window.loadHomeWidgets === 'function') {
@@ -1946,18 +1958,17 @@ document.addEventListener('DOMContentLoaded', boot);
   (function(){
     const ca = document.getElementById('contentArea');
     if (!ca) return;
-    let lastLoaded = 0;
+    let firedOnce = false;
     const trigger = function() {
+      if (firedOnce) return;
       if (document.getElementById('widgetMailList') || document.getElementById('accountsTiles')) {
-        const now = Date.now();
-        if (now - lastLoaded < 500) return;  // debounce
-        lastLoaded = now;
+        firedOnce = true;
+        try { mo.disconnect(); } catch(e){}
         if (typeof loadHomeWidgets === 'function') loadHomeWidgets();
       }
     };
     const mo = new MutationObserver(trigger);
     mo.observe(ca, { childList: true, subtree: true });
-    // Initial check after a moment
     setTimeout(trigger, 300);
     setTimeout(trigger, 1500);
   })();
