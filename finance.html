@@ -1893,11 +1893,19 @@ document.addEventListener('DOMContentLoaded', () => {
       ['filterAccountOverview', 'filterAccountStats'].forEach(function(id){
         const dst = document.getElementById(id);
         if (!dst) return;
-        const prev = dst.value || 'all';
         dst.innerHTML = src.innerHTML;
-        // Preserve selection if option still exists
-        if (Array.from(dst.options).some(function(o){ return o.value === prev; })) dst.value = prev;
-        else dst.value = 'all';
+        // Always follow source's current value
+        dst.value = src.value || 'all';
+      });
+    }
+    // Watch filterAccount VALUE changes (not just option list)
+    function _watchFilterAccountValue() {
+      const src = document.getElementById('filterAccount');
+      if (!src || src._valueWatched) return;
+      src._valueWatched = true;
+      src.addEventListener('change', function(){
+        _populateMirrors();
+        if (typeof renderAll === 'function') renderAll();
       });
     }
     // Watch filterAccount for changes and propagate (since refreshFilterAccounts is in closure scope)
@@ -1928,6 +1936,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     function _wire() {
       _watchFilterAccount();
+      _watchFilterAccountValue();
       _populateMirrors();
       ['filterAccountOverview', 'filterAccountStats'].forEach(function(id){
         const el = document.getElementById(id);
