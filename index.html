@@ -1133,7 +1133,7 @@ document.addEventListener('DOMContentLoaded', boot);
   }
   async function fetchUnreadGmailCount() {
     try {
-      const tok = (window.state && state.token) || null;
+      const tok = (window.state && state.accessToken) || null;
       if (!tok) return null;
       const r = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/labels/INBOX', {
         headers: { Authorization: 'Bearer ' + tok }
@@ -1145,7 +1145,7 @@ document.addEventListener('DOMContentLoaded', boot);
   }
   async function fetchFinanceCurrentMonth() {
     try {
-      const tok = (window.state && state.token) || null;
+      const tok = (window.state && state.accessToken) || null;
       if (!tok) return null;
       const SHEET_NAME = 'Moje finance — podatki';
       // Locate spreadsheet via Drive
