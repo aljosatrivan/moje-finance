@@ -1849,7 +1849,27 @@ document.addEventListener('DOMContentLoaded', boot);
           return topics.some(function(t){ return hay.includes(_normalizeText(t)); });
         });
       }
-      // First try recent (last 2 days). If less than 5, fall back to entire pool.
+      // Fetch full article body (cached in window._articleBodyCache) and check if any topic appears in body
+      window._articleBodyCache = window._articleBodyCache || {};
+      async function _bodyMatchesTopic(item){
+        if (!item.link) return false;
+        if (window._articleBodyCache[item.link] !== undefined) {
+          const cached = window._articleBodyCache[item.link];
+          if (cached === null) return false;
+          return topics.some(function(t){ return cached.includes(_normalizeText(t)); });
+        }
+        try {
+          const r = await fetch('https://corsproxy.io/?url=' + encodeURIComponent(item.link));
+          if (!r.ok) { window._articleBodyCache[item.link] = null; return false; }
+          const htmlText = await r.text();
+          const doc = new DOMParser().parseFromString(htmlText, 'text/html');
+          const el = doc.querySelector('article') || doc.querySelector('.article-body') || doc.querySelector('main') || doc.body;
+          const text = (el && el.textContent) ? el.textContent : '';
+          const norm = _normalizeText(text.substring(0, 5000));
+          window._articleBodyCache[item.link] = norm;
+          return topics.some(function(t){ return norm.includes(_normalizeText(t)); });
+        } catch(e) { window._articleBodyCache[item.link] = null; return false; }
+      }
       let matched = _match(itemsForFilter);
       if (matched.length < 5 && itemsForFilter !== allItems) {
         const matchedAll = _match(allItems);
@@ -1858,6 +1878,22 @@ document.addEventListener('DOMContentLoaded', boot);
           if (matched.length >= 5) break;
           const k = _dedupeKey(n);
           if (!seenKeys.has(k)) { matched.push(n); seenKeys.add(k); }
+        }
+      }
+      // If still < 5, do deep body matching on top unmatched items (max 20 parallel fetches)
+      if (matched.length < 5) {
+        const seenKeys = new Set(matched.map(_dedupeKey));
+        const candidates = itemsForFilter
+          .filter(function(n){ return !seenKeys.has(_dedupeKey(n)); })
+          .sort(function(a,b){ return (b.pubDate ? b.pubDate.getTime() : 0) - (a.pubDate ? a.pubDate.getTime() : 0); })
+          .slice(0, 20);
+        const bodyResults = await Promise.all(candidates.map(async function(c){
+          const ok = await _bodyMatchesTopic(c);
+          return ok ? c : null;
+        }));
+        for (const m of bodyResults) {
+          if (matched.length >= 5) break;
+          if (m && !seenKeys.has(_dedupeKey(m))) { matched.push(m); seenKeys.add(_dedupeKey(m)); }
         }
       }
       // De-dup by normalized title
