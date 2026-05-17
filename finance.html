@@ -373,7 +373,9 @@
       <div class="btn-row">
         <button class="btn btn-secondary" id="btnExport">📤 Izvozi (JSON)</button>
         <button class="btn btn-secondary" id="btnExportCsv">📊 Izvozi (CSV)</button>
+      <button class="btn btn-secondary" id="btnImportAppend">📥 Uvozi</button>
       </div>
+      <input type="file" id="importFile" accept=".json" style="display:none">
       <p class="hint">Tvoji podatki so v tvojem Drive-u, a izvoz je dober dodatni varnostni ukrep.</p>
     </div>
 
@@ -1452,6 +1454,36 @@ function wireEvents() {
     a.download = 'moje-finance-' + today() + '.json';
     a.click();
     toast('Izvoženo');
+  });
+  document.getElementById('btnImportAppend').addEventListener('click', () => {
+    document.getElementById('importFile').click();
+  });
+  document.getElementById('importFile').addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const text = await file.text();
+    let data;
+    try { data = JSON.parse(text); } catch (err) { alert('Neveljaven JSON: ' + err.message); return; }
+    if (!data.transactions) { alert('Manjka polje transactions.'); return; }
+    const newCats = data.new_categories || [];
+    const txs = data.transactions;
+    if (!confirm('Uvoz: dodam ' + newCats.length + ' kategorij in ' + txs.length + ' transakcij. Nadaljujem?')) return;
+    const findByName = (n) => DataStore.getCategories().find(c => c.name.toLowerCase() === n.toLowerCase());
+    const tA = findByName('Terapija Aljoša')?.id;
+    const tM = findByName('Terapija Amal')?.id;
+    if (!tA || !tM) { alert('Manjkata kategoriji Terapija Aljoša ali Terapija Amal.'); return; }
+    for (const c of newCats) { if (!DataStore.getCategory(c.id)) DataStore.addCategory(c); }
+    for (const t of txs) {
+      const cid = t.category_id === '__terapija_aljosa__' ? tA :
+                  t.category_id === '__terapija_amal__' ? tM : t.category_id;
+      DataStore.addTransaction({
+        type: t.type, amount: parseFloat(t.amount), category_id: cid,
+        date: t.date, description: t.description || '', created_at: t.created_at
+      });
+    }
+    toast('Uvoženih ' + txs.length + ' transakcij. Sinhroniziram...');
+    renderAll();
+    e.target.value = '';
   });
   document.getElementById('btnExportCsv').addEventListener('click', () => {
     const rows = [['datum', 'vrsta', 'kategorija', 'znesek', 'opis']];
