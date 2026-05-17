@@ -428,6 +428,8 @@
     .mail-badge-direct { background: #22c55e; color: #052e16; }
     .mail-badge-cc { background: #475569; color: #e2e8f0; }
     .widget-list-items .item-snippet { font-size: 12px; opacity: 0.65; margin-top: 4px; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+    .widget-list-items .item-snippet.ai-summary { opacity: 0.85; border-left: 2px solid #6366f1; padding-left: 6px; }
+    .widget-list-items .item-snippet.ai-summary::before { content: '🤖 '; opacity: 0.7; }
     .widgets-grid-cal { grid-template-columns: 1fr 1fr; }
     @media (max-width: 720px) { .widgets-grid-cal { grid-template-columns: 1fr; } }
   </style>
@@ -1179,6 +1181,18 @@ document.addEventListener('DOMContentLoaded', boot);
   function openMailExternal() {
     window.open('https://mail.google.com/mail/u/0/', '_blank', 'noopener,noreferrer');
   }
+  // AI summaries from GitHub (Claude in Cowork) — TODO: migrate to Cloudflare Worker
+  let _aiSummariesCache = null;
+  async function _fetchAISummaries() {
+    if (_aiSummariesCache !== null) return _aiSummariesCache;
+    try {
+      const r = await fetch('email-summaries.json?_=' + Date.now(), { cache: 'no-store' });
+      if (!r.ok) { _aiSummariesCache = {}; return {}; }
+      const j = await r.json();
+      _aiSummariesCache = (j && j.summaries) || {};
+      return _aiSummariesCache;
+    } catch(e) { _aiSummariesCache = {}; return {}; }
+  }
   // Shared helpers
   function _decodeB64UrlMail(s){
     try {
@@ -1265,8 +1279,11 @@ document.addEventListener('DOMContentLoaded', boot);
           return found ? found.value : '';
         }
         const body = _extractText(j2.payload) || '';
-        const summary = _summarizeEmail(body, 3) || (j2.snippet || '').replace(/\s+/g, ' ').substring(0, 220);
+        const localSummary = _summarizeEmail(body, 3) || (j2.snippet || '').replace(/\s+/g, ' ').substring(0, 220);
+        const aiMap = window._aiSummariesCache || {};
+        const summary = (aiMap[m.id] && aiMap[m.id].summary) || localSummary;
         return {
+          aiSummary: !!(aiMap[m.id] && aiMap[m.id].summary),
           id: m.id,
           subject: getH('Subject') || '(brez naslova)',
           from: getH('From'),
@@ -1339,6 +1356,8 @@ document.addEventListener('DOMContentLoaded', boot);
   if (typeof window._lastTxs === 'undefined') window._lastTxs = _cacheGet('txs');
   if (typeof window._lastAccData === 'undefined') window._lastAccData = _cacheGet('acc');
   async function loadHomeWidgets() {
+    // Pre-fetch AI summaries (background)
+    try { await _fetchAISummaries(); } catch(e){}
     // Mail
     const mailList = document.getElementById('widgetMailList');
     const mailCount = document.getElementById('widgetMailCount');
@@ -1357,7 +1376,8 @@ document.addEventListener('DOMContentLoaded', boot);
             const from = esc((e.from || '').replace(/<.*>$/, '').replace(/"/g, '').trim());
             const dt = fmtDateShort(e.internalDate);
             const snip = esc(e.snippet || '');
-            return '<li><div class="item-main">' + subj + '<div class="item-sub">' + from + '</div>' + (snip ? '<div class="item-snippet">' + snip + '</div>' : '') + '</div><span class="item-date">' + dt + '</span></li>';
+            const snipCls = e.aiSummary ? ' ai-summary' : '';
+            return '<li><div class="item-main">' + subj + '<div class="item-sub">' + from + '</div>' + (snip ? '<div class="item-snippet' + snipCls + '">' + snip + '</div>' : '') + '</div><span class="item-date">' + dt + '</span></li>';
           }).join('');
         }
       } else {
@@ -1605,8 +1625,11 @@ document.addEventListener('DOMContentLoaded', boot);
           const fullBody = _extractText(j2.payload) || '';
           const haystack = subject + ' ' + fullBody.substring(0, 4000);
           const explicitMention = !soleRecipient && mentionsMe(haystack);
-          const summary = _summarizeEmail(fullBody, 3) || (j2.snippet || '').replace(/\s+/g, ' ').substring(0, 220);
+          const localSummary = _summarizeEmail(fullBody, 3) || (j2.snippet || '').replace(/\s+/g, ' ').substring(0, 220);
+          const aiMap = window._aiSummariesCache || {};
+          const summary = (aiMap[m.id] && aiMap[m.id].summary) || localSummary;
           return {
+            aiSummary: !!(aiMap[m.id] && aiMap[m.id].summary),
             id: m.id,
             subject: subject || '(brez naslova)',
             from: from,
@@ -1643,8 +1666,9 @@ document.addEventListener('DOMContentLoaded', boot);
           const from = esc((e.from || '').replace(/<.*>$/, '').replace(/"/g, '').trim());
           const dt = fmtDateShort(e.internalDate);
           const snip = esc(e.snippet || '');
+          const snipCls = e.aiSummary ? ' ai-summary' : '';
           const tag = e.soleRecipient ? '<span class="mail-badge mail-badge-direct" title="Samo zate">SOLO</span>' : '<span class="mail-badge mail-badge-cc" title="Eksplicitno omenjeno tvoje ime">@ TI</span>';
-          return '<li><div class="item-main">' + tag + subj + '<div class="item-sub">' + from + '</div>' + (snip ? '<div class="item-snippet">' + snip + '</div>' : '') + '</div><span class="item-date">' + dt + '</span></li>';
+          return '<li><div class="item-main">' + tag + subj + '<div class="item-sub">' + from + '</div>' + (snip ? '<div class="item-snippet' + snipCls + '">' + snip + '</div>' : '') + '</div><span class="item-date">' + dt + '</span></li>';
         }).join('');
       }
     } else {
