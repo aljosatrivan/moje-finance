@@ -1089,11 +1089,13 @@ function renderTransactions() {
   const period = currentPeriod();
   const type = document.getElementById('filterType').value;
   const catId = document.getElementById('filterCategory').value;
+  const accId = document.getElementById('filterAccount')?.value || 'all';
   const q = document.getElementById('filterSearch').value.toLowerCase().trim();
 
   let txs = DataStore.getTransactions().filter(t => inPeriod(t.date, period));
   if (type !== 'all') txs = txs.filter(t => t.type === type);
   if (catId !== 'all') txs = txs.filter(t => t.category_id === catId);
+  if (accId !== 'all') txs = txs.filter(t => t.account_id === accId);
   if (q) {
     txs = txs.filter(t => {
       const c = DataStore.getCategory(t.category_id);
@@ -1151,6 +1153,34 @@ function refreshFilterCategories() {
     sel.appendChild(o);
   });
   sel.value = prev || 'all';
+}
+
+function refreshFilterAccounts() {
+  const sel = document.getElementById('filterAccount');
+  if (!sel) return;
+  const prev = sel.value;
+  sel.innerHTML = '<option value="all">Vsi računi</option>';
+  DataStore.getAccounts().forEach(a => {
+    const o = document.createElement('option');
+    o.value = a.id;
+    o.textContent = (a.icon || '🏦') + ' ' + a.name;
+    sel.appendChild(o);
+  });
+  sel.value = prev || 'all';
+}
+
+function refreshTxAccountSelect() {
+  const sel = document.getElementById('txAccount');
+  if (!sel) return;
+  const prev = sel.value;
+  sel.innerHTML = '';
+  DataStore.getAccounts().forEach(a => {
+    const o = document.createElement('option');
+    o.value = a.id;
+    o.textContent = (a.icon || '🏦') + ' ' + a.name;
+    sel.appendChild(o);
+  });
+  if (prev) sel.value = prev;
 }
 
 /* ---------------- VIEW: STATISTIKA ---------------- */
@@ -1246,7 +1276,53 @@ function renderStatistics() {
 }
 
 /* ---------------- VIEW: NASTAVITVE ---------------- */
+function renderAccountsList() {
+  const list = document.getElementById('accList');
+  if (!list) return;
+  list.innerHTML = '';
+  DataStore.getAccounts().forEach(a => {
+    const li = document.createElement('li');
+    li.className = 'cat-item';
+    li.innerHTML = `
+      <div class="cat-color" style="background:${a.color}"></div>
+      <span class="name">${a.icon || ''} ${escapeHtml(a.name)}</span>
+      <span class="badge" style="background:var(--bg-3); color:var(--text-dim);">${a.type || 'bank'}</span>`;
+    li.style.cursor = 'pointer';
+    li.addEventListener('click', () => openAccountModal(a.id));
+    list.appendChild(li);
+  });
+}
+
+function openAccountModal(id) {
+  document.getElementById('modalAcc').classList.add('open');
+  document.body.style.overflow = 'hidden';
+  const form = document.getElementById('accForm');
+  form.reset();
+  if (id) {
+    const a = DataStore.getAccount(id);
+    if (!a) return;
+    document.getElementById('modalAccTitle').textContent = 'Uredi račun';
+    document.getElementById('accId').value = a.id;
+    document.getElementById('accName').value = a.name;
+    document.getElementById('accType').value = a.type || 'bank';
+    document.getElementById('accIcon').value = a.icon || '';
+    document.getElementById('accColor').value = a.color || '#6366f1';
+    document.getElementById('btnDeleteAcc').style.display = 'block';
+  } else {
+    document.getElementById('modalAccTitle').textContent = 'Nov račun';
+    document.getElementById('accId').value = '';
+    document.getElementById('accColor').value = '#6366f1';
+    document.getElementById('btnDeleteAcc').style.display = 'none';
+  }
+  setTimeout(() => document.getElementById('accName').focus(), 100);
+}
+function closeAccountModal() {
+  document.getElementById('modalAcc').classList.remove('open');
+  document.body.style.overflow = '';
+}
+
 function renderSettings() {
+  renderAccountsList();
   const info = document.getElementById('syncInfo');
   const last = DataStore.state.lastSyncAt;
   info.innerHTML = `Zadnja sinhronizacija: <strong>${last ? new Date(last).toLocaleString('sl-SI') : '—'}</strong><br>
@@ -1292,6 +1368,8 @@ function openTxModal(id) {
     currentTxType = t.type;
     refreshTxCategorySelect();
     document.getElementById('txCategory').value = t.category_id;
+    refreshTxAccountSelect();
+    if (t.account_id) document.getElementById('txAccount').value = t.account_id;
     document.getElementById('btnDeleteTx').style.display = 'block';
   } else {
     document.getElementById('modalTxTitle').textContent = 'Nova transakcija';
@@ -1299,6 +1377,10 @@ function openTxModal(id) {
     document.getElementById('txDate').value = today();
     currentTxType = 'expense';
     refreshTxCategorySelect();
+    refreshTxAccountSelect();
+    // privzeti račun = prvi
+    const accs = DataStore.getAccounts();
+    if (accs.length) document.getElementById('txAccount').value = accs[0].id;
     document.getElementById('btnDeleteTx').style.display = 'none';
   }
   updateTypeToggle();
@@ -1361,6 +1443,7 @@ function switchView(name) {
 }
 function renderAll() {
   refreshFilterCategories();
+  refreshFilterAccounts();
   renderOverview();
   renderTransactions();
   renderSettings();
@@ -1491,9 +1574,11 @@ function wireEvents() {
       type: currentTxType,
       amount: parseFloat(document.getElementById('txAmount').value),
       category_id: document.getElementById('txCategory').value,
+      account_id: document.getElementById('txAccount').value,
       date: document.getElementById('txDate').value,
       description: document.getElementById('txDesc').value.trim(),
     };
+    if (!payload.account_id) { alert('Izberi račun.'); return; }
     if (id) { DataStore.updateTransaction(id, payload); toast('Transakcija posodobljena'); }
     else { DataStore.addTransaction(payload); toast('Transakcija dodana'); }
     closeTxModal();
@@ -1516,6 +1601,41 @@ function wireEvents() {
   document.getElementById('filterType').addEventListener('change', renderTransactions);
   document.getElementById('filterCategory').addEventListener('change', renderTransactions);
   document.getElementById('filterSearch').addEventListener('input', renderTransactions);
+  document.getElementById('filterAccount')?.addEventListener('change', renderTransactions);
+
+  // Accounts CRUD
+  document.getElementById('btnAddAccount')?.addEventListener('click', () => openAccountModal(null));
+  document.getElementById('btnCancelAcc')?.addEventListener('click', closeAccountModal);
+  document.getElementById('modalAcc')?.addEventListener('click', (e) => { if (e.target.id === 'modalAcc') closeAccountModal(); });
+  document.getElementById('accForm')?.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const id = document.getElementById('accId').value;
+    const payload = {
+      name: document.getElementById('accName').value.trim(),
+      type: document.getElementById('accType').value,
+      icon: document.getElementById('accIcon').value.trim(),
+      color: document.getElementById('accColor').value,
+    };
+    if (id) { DataStore.updateAccount(id, payload); toast('Račun posodobljen'); }
+    else { DataStore.addAccount(payload); toast('Račun dodan'); }
+    closeAccountModal();
+    refreshFilterAccounts();
+    renderAccountsList();
+    renderTransactions();
+  });
+  document.getElementById('btnDeleteAcc')?.addEventListener('click', () => {
+    const id = document.getElementById('accId').value;
+    if (!id) return;
+    if (DataStore.getAccounts().length <= 1) { alert('Mora ostati vsaj en račun.'); return; }
+    const a = DataStore.getAccount(id);
+    if (confirm(`Res želiš izbrisati račun "${a.name}"? Transakcije bodo prenesene na drug račun.`)) {
+      DataStore.deleteAccount(id);
+      toast('Račun izbrisan');
+      closeAccountModal();
+      refreshFilterAccounts();
+      renderAll();
+    }
+  });
 
   // Stats range
   document.querySelectorAll('#statsPeriod button').forEach(b => {
@@ -1612,8 +1732,19 @@ function wireEvents() {
     try { data = JSON.parse(text); } catch (err) { alert('Neveljaven JSON: ' + err.message); return; }
     if (!data.transactions) { alert('Manjka polje transactions.'); return; }
     const newCats = data.new_categories || [];
+    const newAccs = data.new_accounts || [];
     const txs = data.transactions;
-    if (!confirm('Uvoz: dodam ' + newCats.length + ' kategorij in ' + txs.length + ' transakcij. Nadaljujem?')) return;
+    const replaceAll = data.replace_all === true;
+    const msg = replaceAll
+      ? 'POZOR: ZAMENJAJ VSE. Izbrišem trenutne ' + DataStore.state.transactions.length + ' transakcij in dodam ' + txs.length + ' novih (+ ' + newCats.length + ' kategorij + ' + newAccs.length + ' računov). Nadaljujem?'
+      : 'Uvoz: dodam ' + newCats.length + ' kategorij, ' + newAccs.length + ' računov in ' + txs.length + ' transakcij. Nadaljujem?';
+    if (!confirm(msg)) return;
+    for (const a of newAccs) {
+      if (!DataStore.getAccount(a.id)) DataStore.addAccount(a);
+    }
+    if (replaceAll) {
+      DataStore.state.transactions = [];
+    }
     const findByName = (n) => DataStore.getCategories().find(c => c.name.toLowerCase() === n.toLowerCase());
     const norm = s => s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
     const cats = DataStore.getCategories();
