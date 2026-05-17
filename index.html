@@ -1838,6 +1838,8 @@ document.addEventListener('DOMContentLoaded', boot);
       const cutoff = Date.now() - TWO_DAYS_MS;
       const recent = allItems.filter(function(n){ return n.pubDate && n.pubDate.getTime() >= cutoff; });
       const itemsForFilter = recent.length > 0 ? recent : allItems;
+      // Key for dedupe: normalized title (same article appears with different URLs across feeds)
+      function _dedupeKey(n){ return _normalizeText((n.title || '').replace(/\s+/g, ' ').trim()); }
       function _match(arr){
         return arr.filter(function(n){
           const hay = _normalizeText(n.title + ' ' + n.desc);
@@ -1846,19 +1848,22 @@ document.addEventListener('DOMContentLoaded', boot);
       }
       // First try recent (last 2 days). If less than 5, fall back to entire pool.
       let matched = _match(itemsForFilter);
-      // Always also include from allItems (broader pool) when needed
       if (matched.length < 5 && itemsForFilter !== allItems) {
         const matchedAll = _match(allItems);
-        const seenRecentLinks = new Set(matched.map(function(n){ return n.link; }));
+        const seenKeys = new Set(matched.map(_dedupeKey));
         for (const n of matchedAll) {
           if (matched.length >= 5) break;
-          if (!seenRecentLinks.has(n.link)) matched.push(n);
+          const k = _dedupeKey(n);
+          if (!seenKeys.has(k)) { matched.push(n); seenKeys.add(k); }
         }
       }
-      // De-dup by link
+      // De-dup by normalized title
       const seen = new Set();
       const unique = [];
-      for (const n of matched) { if (!seen.has(n.link)) { seen.add(n.link); unique.push(n); } }
+      for (const n of matched) {
+        const k = _dedupeKey(n);
+        if (!seen.has(k)) { seen.add(k); unique.push(n); }
+      }
       // Sort by date desc
       unique.sort(function(a,b){ return (b.pubDate ? b.pubDate.getTime() : 0) - (a.pubDate ? a.pubDate.getTime() : 0); });
       return { items: unique.slice(0, 5), totalMatched: unique.length, topics, pool: allItems.length };
