@@ -1174,7 +1174,15 @@ document.addEventListener('DOMContentLoaded', boot);
       if (r1.status === 401 || r1.status === 403) return { error: 'no-scope' };
       if (!r1.ok) return { error: 'http-' + r1.status };
       const j1 = await r1.json();
-      const totalUnread = j1.resultSizeEstimate || (j1.messages || []).length;
+      // Get accurate INBOX unread count via label endpoint
+      let totalUnread = (j1.messages || []).length;
+      try {
+        const lr = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/labels/INBOX', { headers: { Authorization: 'Bearer ' + tok } });
+        if (lr.ok) {
+          const lj = await lr.json();
+          if (typeof lj.threadsUnread === 'number') totalUnread = lj.threadsUnread;
+        }
+      } catch(e) {}
       if (!j1.messages || !j1.messages.length) return { emails: [], totalUnread: 0 };
       const emails = await Promise.all(j1.messages.map(async function(m){
         const r2 = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/' + m.id + '?format=metadata&metadataHeaders=Subject&metadataHeaders=From&metadataHeaders=Date', {
@@ -1250,36 +1258,49 @@ document.addEventListener('DOMContentLoaded', boot);
     } catch (e) { return ''; }
   }
   function esc(s) { const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
+  // Cached results survive failed refreshes
+  window._lastMailRes = window._lastMailRes || null;
+  window._lastTxs = window._lastTxs || null;
+  window._lastAccData = window._lastAccData || null;
   async function loadHomeWidgets() {
     // Mail
     const mailList = document.getElementById('widgetMailList');
     const mailCount = document.getElementById('widgetMailCount');
     if (mailList) {
       const res = await fetchTopUnreadEmails(5);
-      if (res.error === 'no-scope') {
-        mailCount.textContent = '!';
-        mailList.innerHTML = '<li class="widget-list-error">Za prikaz mailov se odjavi in spet prijavi (dodatno dovoljenje za Gmail).</li>';
-      } else if (res.error) {
-        mailCount.textContent = '?';
-        mailList.innerHTML = '<li class="widget-list-error">Napaka pri branju: ' + esc(res.error) + '</li>';
-      } else {
-        mailCount.textContent = String(res.totalUnread || 0);
-        if (!res.emails.length) {
+      const ok = res && !res.error && Array.isArray(res.emails);
+      const useRes = ok ? res : window._lastMailRes;
+      if (ok) window._lastMailRes = res;
+      if (useRes && !useRes.error) {
+        mailCount.textContent = String(useRes.totalUnread || 0);
+        if (!useRes.emails.length) {
           mailList.innerHTML = '<li class="widget-empty">Ni neprebranih mailov ✓</li>';
         } else {
-          mailList.innerHTML = res.emails.map(function(e){
+          mailList.innerHTML = useRes.emails.map(function(e){
             const subj = esc(e.subject);
             const from = esc((e.from || '').replace(/<.*>$/, '').replace(/"/g, '').trim());
             const dt = fmtDateShort(e.internalDate);
             return '<li><div class="item-main">' + subj + '<div class="item-sub">' + from + '</div></div><span class="item-date">' + dt + '</span></li>';
           }).join('');
         }
+      } else {
+        // No cache yet — show error message
+        if (res && res.error === 'no-scope') {
+          mailCount.textContent = '!';
+          mailList.innerHTML = '<li class="widget-list-error">Za prikaz mailov se odjavi in spet prijavi (dodatno dovoljenje za Gmail).</li>';
+        } else if (res && res.error) {
+          mailCount.textContent = '?';
+          mailList.innerHTML = '<li class="widget-list-error">Napaka: ' + esc(res.error) + '</li>';
+        }
       }
     }
     // Transactions
     const txList = document.getElementById('widgetTxList');
     if (txList) {
-      const txs = await fetchTopTransactions(5);
+      const fresh = await fetchTopTransactions(5);
+      const useTxs = (fresh !== null && fresh !== undefined) ? fresh : window._lastTxs;
+      if (fresh !== null && fresh !== undefined) window._lastTxs = fresh;
+      const txs = useTxs;
       if (!txs) { txList.innerHTML = '<li class="widget-list-error">Napaka pri branju finančnih podatkov.</li>'; }
       else if (!txs.length) { txList.innerHTML = '<li class="widget-empty">Ni transakcij.</li>'; }
       else {
@@ -1331,7 +1352,9 @@ document.addEventListener('DOMContentLoaded', boot);
     const el = document.getElementById('accountsTiles');
     const sub = document.getElementById('financeAccountsSubmenu');
     if (!el && !sub) return;
-    const data = await fetchFinanceAccountsAndMonth();
+    const fresh = await fetchFinanceAccountsAndMonth();
+    const data = fresh || window._lastAccData;
+    if (fresh) window._lastAccData = fresh;
     if (!data) {
       if (el) el.innerHTML = '<div class="acc-tile-empty">Napaka pri branju računov</div>';
       return;
