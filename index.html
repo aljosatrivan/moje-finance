@@ -480,7 +480,7 @@
 <body>
 
 <!-- LOGIN screen -->
-<div class="screen-center" id="loginScreen" style="display:none;display:none;">
+<div class="screen-center" id="loginScreen" style="display:none;">
   <div class="screen-card">
     <div class="logo">💼</div>
     <h2>Aljošov Dashboard</h2>
@@ -663,23 +663,13 @@ async function initAuth() {
       }
       state.accessToken = resp.access_token;
       state.tokenExpiresAt = Date.now() + (Number(resp.expires_in || 3600) - 60) * 1000;
-      try { localStorage.setItem('dashboard_token_cache', JSON.stringify({ token: state.accessToken, expiresAt: state.tokenExpiresAt, email: state.email })); } catch(e){}
-      // Schedule proactive silent refresh ~5 min before expiry
-      if (window._tokenRefreshTimer) clearTimeout(window._tokenRefreshTimer);
-      const msUntilRefresh = Math.max(30000, state.tokenExpiresAt - Date.now() - 5 * 60 * 1000);
-      window._tokenRefreshTimer = setTimeout(function(){
-        try { requestToken(false); } catch(e) { console.warn('proactive refresh failed', e); }
-      }, msUntilRefresh);
       onSignedIn();
     }
   });
 }
 
 function requestToken(interactive = true) {
-  const hint = localStorage.getItem('dashboard_last_email') || '';
-  const opts = { prompt: interactive ? 'consent' : '' };
-  if (hint) opts.hint = hint;
-  state.tokenClient.requestAccessToken(opts);
+  state.tokenClient.requestAccessToken({ prompt: interactive ? 'consent' : '' });
 }
 
 async function getAccessToken() {
@@ -704,7 +694,6 @@ async function onSignedIn() {
     });
     const u = await r.json();
     state.email = u.email;
-  if (state.email) try { localStorage.setItem('dashboard_last_email', state.email); } catch(e){}
     state.name = u.given_name || u.name || u.email.split('@')[0];
   } catch (e) { /* non-fatal */ }
   // Load config from Drive
@@ -1308,39 +1297,7 @@ async function boot() {
 document.getElementById('btnLogin').addEventListener('click', () => {
   showScreen('loadingScreen');
   setLoading('Prijavljam...', 'Čakam Google avtorizacijo');
-  // Try cached token first (valid for ~1 hour)
-  try {
-    const cache = JSON.parse(localStorage.getItem('dashboard_token_cache') || 'null');
-    if (cache && cache.token && cache.expiresAt > Date.now() + 30000) {
-      state.accessToken = cache.token;
-      state.tokenExpiresAt = cache.expiresAt;
-      if (cache.email) state.email = cache.email;
-      // Schedule proactive refresh ~5 min before expiry
-      if (window._tokenRefreshTimer) clearTimeout(window._tokenRefreshTimer);
-      const msUntilRefresh = Math.max(30000, state.tokenExpiresAt - Date.now() - 5 * 60 * 1000);
-      window._tokenRefreshTimer = setTimeout(function(){
-        try { requestToken(false); } catch(e) {}
-      }, msUntilRefresh);
-      onSignedIn();
-    } else {
-      // No valid cache — silent OAuth first
-      requestToken(false);
-      setTimeout(function(){
-        if (!state.accessToken) {
-          if (typeof showScreen === 'function') showScreen('loginScreen');
-          requestToken(true);
-        }
-      }, 5000);
-    }
-  } catch(e) {
-    requestToken(false);
-    setTimeout(function(){
-      if (!state.accessToken) {
-        if (typeof showScreen === 'function') showScreen('loginScreen');
-        requestToken(true);
-      }
-    }, 5000);
-  }
+  requestToken(true);
 });
 
 // PIN pad events
