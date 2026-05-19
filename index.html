@@ -663,13 +663,17 @@ async function initAuth() {
       }
       state.accessToken = resp.access_token;
       state.tokenExpiresAt = Date.now() + (Number(resp.expires_in || 3600) - 60) * 1000;
+      try { if (state.email) localStorage.setItem('dashboard_last_email', state.email); } catch(e){}
       onSignedIn();
     }
   });
 }
 
 function requestToken(interactive = true) {
-  state.tokenClient.requestAccessToken({ prompt: interactive ? 'consent' : '' });
+  const hint = localStorage.getItem('dashboard_last_email') || '';
+  const opts = { prompt: '' };
+  if (hint) opts.hint = hint;
+  state.tokenClient.requestAccessToken(opts);
 }
 
 async function getAccessToken() {
