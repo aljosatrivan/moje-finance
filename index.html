@@ -663,6 +663,7 @@ async function initAuth() {
       }
       state.accessToken = resp.access_token;
       state.tokenExpiresAt = Date.now() + (Number(resp.expires_in || 3600) - 60) * 1000;
+      try { localStorage.setItem('dashboard_token_cache', JSON.stringify({ token: state.accessToken, expiresAt: state.tokenExpiresAt, email: state.email })); } catch(e){}
       onSignedIn();
     }
   });
@@ -1301,15 +1302,33 @@ async function boot() {
 document.getElementById('btnLogin').addEventListener('click', () => {
   showScreen('loadingScreen');
   setLoading('Prijavljam...', 'Čakam Google avtorizacijo');
-  // Silent OAuth first (no consent screen if already authenticated)
-  requestToken(false);
-  setTimeout(function(){
-    if (!state.accessToken) {
-      // Show login screen as fallback after silent OAuth timeout
-      if (typeof showScreen === 'function') showScreen('loginScreen');
-      requestToken(true);
+  // Try cached token first (valid for ~1 hour)
+  try {
+    const cache = JSON.parse(localStorage.getItem('dashboard_token_cache') || 'null');
+    if (cache && cache.token && cache.expiresAt > Date.now() + 30000) {
+      state.accessToken = cache.token;
+      state.tokenExpiresAt = cache.expiresAt;
+      if (cache.email) state.email = cache.email;
+      onSignedIn();
+    } else {
+      // No valid cache — silent OAuth first
+      requestToken(false);
+      setTimeout(function(){
+        if (!state.accessToken) {
+          if (typeof showScreen === 'function') showScreen('loginScreen');
+          requestToken(true);
+        }
+      }, 5000);
     }
-  }, 5000);
+  } catch(e) {
+    requestToken(false);
+    setTimeout(function(){
+      if (!state.accessToken) {
+        if (typeof showScreen === 'function') showScreen('loginScreen');
+        requestToken(true);
+      }
+    }, 5000);
+  }
 });
 
 // PIN pad events
