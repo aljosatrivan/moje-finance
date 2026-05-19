@@ -1295,7 +1295,7 @@ async function boot() {
     showScreen('loginScreen');
     return;
   }
-  showScreen('loginScreen');
+  showScreen('loadingScreen');
 }
 
 document.getElementById('btnLogin').addEventListener('click', () => {
@@ -1305,9 +1305,8 @@ document.getElementById('btnLogin').addEventListener('click', () => {
   requestToken(false);
   setTimeout(function(){
     if (!state.accessToken) {
-      // Show login screen as fallback
-      const ls = document.getElementById('loginScreen');
-      if (ls) ls.style.display = '';
+      // Show login screen as fallback after silent OAuth timeout
+      if (typeof showScreen === 'function') showScreen('loginScreen');
       requestToken(true);
     }
   }, 5000);
