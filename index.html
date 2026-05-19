@@ -664,6 +664,12 @@ async function initAuth() {
       state.accessToken = resp.access_token;
       state.tokenExpiresAt = Date.now() + (Number(resp.expires_in || 3600) - 60) * 1000;
       try { localStorage.setItem('dashboard_token_cache', JSON.stringify({ token: state.accessToken, expiresAt: state.tokenExpiresAt, email: state.email })); } catch(e){}
+      // Schedule proactive silent refresh ~5 min before expiry
+      if (window._tokenRefreshTimer) clearTimeout(window._tokenRefreshTimer);
+      const msUntilRefresh = Math.max(30000, state.tokenExpiresAt - Date.now() - 5 * 60 * 1000);
+      window._tokenRefreshTimer = setTimeout(function(){
+        try { requestToken(false); } catch(e) { console.warn('proactive refresh failed', e); }
+      }, msUntilRefresh);
       onSignedIn();
     }
   });
@@ -1309,6 +1315,12 @@ document.getElementById('btnLogin').addEventListener('click', () => {
       state.accessToken = cache.token;
       state.tokenExpiresAt = cache.expiresAt;
       if (cache.email) state.email = cache.email;
+      // Schedule proactive refresh ~5 min before expiry
+      if (window._tokenRefreshTimer) clearTimeout(window._tokenRefreshTimer);
+      const msUntilRefresh = Math.max(30000, state.tokenExpiresAt - Date.now() - 5 * 60 * 1000);
+      window._tokenRefreshTimer = setTimeout(function(){
+        try { requestToken(false); } catch(e) {}
+      }, msUntilRefresh);
       onSignedIn();
     } else {
       // No valid cache — silent OAuth first
