@@ -480,7 +480,7 @@
 <body>
 
 <!-- LOGIN screen -->
-<div class="screen-center" id="loginScreen" style="display:none;">
+<div class="screen-center" id="loginScreen" style="display:none;display:none;">
   <div class="screen-card">
     <div class="logo">💼</div>
     <h2>Aljošov Dashboard</h2>
@@ -1304,7 +1304,12 @@ document.getElementById('btnLogin').addEventListener('click', () => {
   // Silent OAuth first (no consent screen if already authenticated)
   requestToken(false);
   setTimeout(function(){
-    if (!state.accessToken) requestToken(true);
+    if (!state.accessToken) {
+      // Show login screen as fallback
+      const ls = document.getElementById('loginScreen');
+      if (ls) ls.style.display = '';
+      requestToken(true);
+    }
   }, 5000);
 });
 
