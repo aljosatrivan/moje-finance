@@ -669,7 +669,10 @@ async function initAuth() {
 }
 
 function requestToken(interactive = true) {
-  state.tokenClient.requestAccessToken({ prompt: interactive ? 'consent' : '' });
+  const hint = localStorage.getItem('dashboard_last_email') || '';
+  const opts = { prompt: interactive ? 'consent' : '' };
+  if (hint) opts.hint = hint;
+  state.tokenClient.requestAccessToken(opts);
 }
 
 async function getAccessToken() {
@@ -694,6 +697,7 @@ async function onSignedIn() {
     });
     const u = await r.json();
     state.email = u.email;
+  if (state.email) try { localStorage.setItem('dashboard_last_email', state.email); } catch(e){}
     state.name = u.given_name || u.name || u.email.split('@')[0];
   } catch (e) { /* non-fatal */ }
   // Load config from Drive
