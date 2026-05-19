@@ -1297,7 +1297,11 @@ async function boot() {
 document.getElementById('btnLogin').addEventListener('click', () => {
   showScreen('loadingScreen');
   setLoading('Prijavljam...', 'Čakam Google avtorizacijo');
-  requestToken(true);
+  // Silent OAuth first (no consent screen if already authenticated)
+  requestToken(false);
+  setTimeout(function(){
+    if (!state.accessToken) requestToken(true);
+  }, 5000);
 });
 
 // PIN pad events
